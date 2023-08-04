@@ -1,0 +1,26 @@
+{
+  "name": "demo-authzn-frontend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@metamask/detect-provider": "^2.0.0",
+    "@oasisprotocol/sapphire-paratime": "^1.1.1",
+    "asn1js": "^3.0.5",
+    "cbor-redux": "^1.0.0",
+    "demo-authzn-backend": "workspace:*",
+    "ethers": "5.7.2",
+    "exome": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/pbkdf2": "^3.1.0",
+    "pbkdf2": "^3.1.2",
+    "typescript": "^5.0.2",
+    "vite": "^4.4.5"
+  }
+}

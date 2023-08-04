@@ -1,0 +1,1 @@
+export { type WebAuthNExample, WebAuthNExample__factory } from "../typechain-types";

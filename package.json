@@ -1,8 +1,7 @@
 {
-  "name": "fromage",
-  "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^2.0.2",
-    "@oasisprotocol/sapphire-hardhat": "^2.16.1",
-    "hardhat": "^2.17.0"
-  }
+    "name": "demo-authzn",
+    "workspaces": [
+        "frontend",
+        "backend"
+    ]
 }
