@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { TestP256R1 } from "../typechain-types";
 import { ethers } from "hardhat"
-import { ec, curve } from "elliptic";
+import { ec } from "elliptic";
 import crypto from 'crypto';
 import { expect } from "chai";
 import { bufToHex } from 'bigint-conversion'
@@ -15,6 +17,7 @@ function bn2u256(x:BN) {
 
 describe('SECP256R1', () => {
     let c: TestP256R1;
+
     before(async () => {
         const lf = await ethers.getContractFactory('SECP256R1');
         const ll = await lf.deploy();
@@ -24,19 +27,20 @@ describe('SECP256R1', () => {
         c = await f.deploy()
         await c.deployed();
     });
+
     it('Addition', async () => {
         for( let i = 0; i < 10; i++ ) {
             const kp1 = secp256r1.genKeyPair().getPublic();
-            const x1 = '0x' + kp1.getX().toString('hex');
-            const y1 = '0x' + kp1.getY().toString('hex');
+            const x1 = bn2u256(kp1.getX());
+            const y1 = bn2u256(kp1.getY());
 
             const kp2 = secp256r1.genKeyPair().getPublic();
-            const x2 = '0x' + kp2.getX().toString('hex');
-            const y2 = '0x' + kp2.getY().toString('hex');
+            const x2 = bn2u256(kp2.getX());
+            const y2 = bn2u256(kp2.getY());
 
             const kp3 = kp1.add(kp2);
-            const x3 = '0x' + kp3.getX().toString('hex');
-            const y3 = '0x' + kp3.getY().toString('hex');
+            const x3 = bn2u256(kp3.getX());
+            const y3 = bn2u256(kp3.getY());
 
             const z = await c.add(x1, y1, x2, y2);
             expect(z.x3).equal(x3);
@@ -47,12 +51,12 @@ describe('SECP256R1', () => {
     it('Doubling', async () => {
         for( let i = 0; i < 10; i++ ) {
             const kp1 = secp256r1.genKeyPair().getPublic();
-            const x1 = '0x' + kp1.getX().toString('hex');
-            const y1 = '0x' + kp1.getY().toString('hex');
+            const x1 = bn2u256(kp1.getX());
+            const y1 = bn2u256(kp1.getY());
 
             const kp2 = kp1.dbl();
-            const x2 = '0x' + kp2.getX().toString('hex');
-            const y2 = '0x' + kp2.getY().toString('hex');
+            const x2 = bn2u256(kp2.getX());
+            const y2 = bn2u256(kp2.getY());
 
             const z = await c.double(x1, y1);
             expect(z.x2).equal(x2);
@@ -64,15 +68,15 @@ describe('SECP256R1', () => {
         for( let i = 1; i < 20; i++ ) {
             const kp1 = secp256r1.genKeyPair().getPublic();
 
-            const x1 = '0x' + kp1.getX().toString('hex').padStart(64, '0');
-            const y1 = '0x' + kp1.getY().toString('hex').padStart(64, '0');
+            const x1 = bn2u256(kp1.getX());
+            const y1 = bn2u256(kp1.getY());
             const secret = new BN(bufToHex(crypto.getRandomValues(new Uint8Array(32))), 16).mod(secp256r1.n!);
             const kp2 = kp1.mul(secret);
 
-            const sbn = '0x'+secret.toString('hex');
+            const sbn = bn2u256(secret);
 
-            const x2 = '0x' + kp2.getX().toString('hex').padStart(64, '0');
-            const y2 = '0x' + kp2.getY().toString('hex').padStart(64, '0');
+            const x2 = bn2u256(kp2.getX());
+            const y2 = bn2u256(kp2.getY());
             const kp3 = await c.multiply(x1, y1, sbn);
 
             expect(x2).eq(kp3[0]);
