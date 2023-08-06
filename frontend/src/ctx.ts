@@ -2,6 +2,7 @@ import * as sapphire from "@oasisprotocol/sapphire-paratime";
 import { ethers } from "ethers";
 import detectEthereumProvider from '@metamask/detect-provider';
 import { Exome } from "exome"
+import { NETWORKS, NetworkDefinition } from "./networks";
 
 // ------------------------------------------------------------------
 
@@ -25,16 +26,16 @@ interface ProviderConnectInfo {
 }
 
 interface MetaMaskEthereumProvider {
-    isMetaMask?: boolean;
+    isConnected(): boolean;
     once(eventName: string | symbol, listener: (...args: any[]) => void): this;
     on(eventName: string | symbol, listener: (...args: any[]) => void): this;
     off(eventName: string | symbol, listener: (...args: any[]) => void): this;
     addListener(eventName: string | symbol, listener: (...args: any[]) => void): this;
     removeListener(eventName: string | symbol, listener: (...args: any[]) => void): this;
     removeAllListeners(event?: string | symbol): this;
-
-    isConnected(): boolean;
     request(args: RequestArguments): Promise<unknown>;
+
+    isMetaMask?: boolean;
     _metamask: {
         isUnlocked(): Promise<boolean>;
     }
@@ -44,6 +45,7 @@ interface MetaMaskEthereumProvider {
 
 export interface EthWallet {
     chainId: number;
+    network?: NetworkDefinition;
     address?: string;
 }
 
@@ -51,9 +53,6 @@ export interface EthWallet {
 
 export class EthProviders extends Exome
 {
-    // Unwrapped Provider
-    public up?: ethers.providers.JsonRpcProvider;
-
     // Sapphire Wrapped Provider
     public swp?: ethers.providers.JsonRpcProvider & sapphire.SapphireAnnex;
 
@@ -69,7 +68,13 @@ export class EthProviders extends Exome
 
     public accounts: string[];
 
-    constructor (public config: AppConfig)
+    public _account: string|undefined;
+
+    get account () {
+        return this._account;
+    }
+
+    constructor ()
     {
         super();
 
@@ -78,65 +83,141 @@ export class EthProviders extends Exome
         this.accounts = [];
     }
 
-    private log (name: string, ...args:any[]) {
+    private _log (name: string, ...args:any[]) {
         console.log(`EthProviders.${name}`, ...args);
     }
 
     async _onConnect (connectInfo: ProviderConnectInfo) {
-        this.log('onConnect', connectInfo);
+        this._log('onConnect', connectInfo);
         this.connected = true;
-        await this._walletRefresh();
+        await this.refresh();
     }
 
     async _onMessage (message: ProviderMessage) {
-        this.log('onMessage', message);
-        await this._walletRefresh();
+        this._log('onMessage', message);
+        await this.refresh();
     }
 
     async _onDisconnect (error: ProviderRpcError) {
-        this.log('onDisconnect', error);
+        this._log('onDisconnect', error);
         this.connected = false;
-        await this._walletRefresh();
+        await this.refresh();
     }
 
     async _onAccountsChanged (accounts: Array<string>) {
-        this.log('onAccountsChanged', accounts);
+        this._log('onAccountsChanged', accounts);
         this.accounts = accounts;
+        this._account = accounts[0];
         this.connected = accounts.length > 0;
-        await this._walletRefresh();
+        await this.refresh();
     }
 
     async _onChainChanged (chainId: string) {
-        this.log('onChainChanged', chainId);
-        await this._walletRefresh();
+        this._log('onChainChanged', chainId);
+        await this.refresh();
     }
 
-    async _walletRefresh ()
+    async selectAccount(account:string)
     {
-        if( this.eth )
-        {
-            let address: string | undefined;
+        if( ! this.accounts.includes(account) ) {
+            return false;
+        }
 
-            this.accounts = await this.eth.request({method: 'eth_accounts'}) as string[];
-            if( this.accounts.length ) {
-                address = this.accounts[0];
+        if( account == this._account ) {
+            return false;
+        }
+
+        this._account = account;
+
+        console.log('Switched to', account);
+
+        await this.refresh();
+
+        return true;
+    }
+
+    async switchNetwork(chainId:number) {
+        if( ! this.eth ) {
+            return false;
+        }
+
+        try {
+            await this.eth.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: `0x${chainId.toString(16)}` }],
+            });
+            return true;
+        }
+        catch (e: any) {
+            if ((e as any).code !== 4902) throw e;
+
+            if( ! (chainId in NETWORKS) ) {
+                return false;
             }
 
-            this.connected = this.accounts.length > 0;
+            const n = NETWORKS[chainId];
+            await this.eth.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                    chainId: `0x${chainId.toString(16)}`,
+                    chainName: n.chainName,
+                    rpcUrls: n.rpcUrls,
+                }],
+            });
 
-            const chainId = await this.eth.request({method: 'eth_chainId'}) as string;
-
-            this.wallet = {
-                chainId: parseInt(chainId,16),
-                address
-            };
-
-            this.up = new ethers.providers.Web3Provider(this.eth);
-
-            this.swp = sapphire.wrap(this.up);
-
-            this.sws = sapphire.wrap(this.up.getSigner(address));
+            return true;
         }
+    }
+
+    async refresh ()
+    {
+        if( ! this.eth )
+        {
+            return false;
+        }
+
+        let address: string | undefined;
+
+        this.accounts = await this.eth.request({method: 'eth_accounts'}) as string[];
+
+        if( this.accounts.length )
+        {
+            if( this._account )
+            {
+                if( ! this.accounts.includes(this._account) ) {
+                    this._account = address = this.accounts[0];
+                }
+                else {
+                    address = this._account;
+                }
+            }
+            else {
+                this._account = address = this.accounts[0];
+            }
+        }
+        else {
+            this._account = undefined;
+        }
+
+        this.connected = this.accounts.length > 0;
+
+        const chainId = await this.eth.request({method: 'eth_chainId'}) as string;
+
+        const nid = parseInt(chainId, 16);
+        const n = nid in NETWORKS ? NETWORKS[nid] : undefined;
+        this.wallet = {
+            chainId: nid,
+            network: n,
+            address
+        };
+
+        const up = new ethers.providers.Web3Provider(this.eth);
+
+        this.swp = sapphire.wrap(up);
+
+        this.sws = sapphire.wrap(up.getSigner(address));
+
+        return true;
     }
 
     async attach ()
@@ -156,7 +237,7 @@ export class EthProviders extends Exome
             eth.on('accountsChanged', this._onAccountsChanged.bind(this));
             eth.on('chainChanged', this._onChainChanged.bind(this));
 
-            await this._walletRefresh();
+            await this.refresh();
         }
         return true;
     }

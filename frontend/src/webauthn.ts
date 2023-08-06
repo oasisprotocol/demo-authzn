@@ -151,9 +151,9 @@ export async function credentialCreate (rp: PublicKeyCredentialRpEntity, user:Pu
             attestation: "none",
             challenge: challenge.buffer,
             pubKeyCredParams: [
-                {alg: -8, type: "public-key"},   // Ed25519
+                //{alg: -8, type: "public-key"},   // Ed25519
                 {alg: -7, type: "public-key"},   // ES256
-                {alg: -257, type: "public-key"}  // RS256
+                //{alg: -257, type: "public-key"}  // RS256
             ],
             rp,
             user

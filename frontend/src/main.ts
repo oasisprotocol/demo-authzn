@@ -1,11 +1,30 @@
 import { EthProviders } from './ctx'
 import { subscribe } from "exome";
-import {ethers} from "ethers";
+import { ethers } from "ethers";
 import { WebAuthNExample__factory } from "demo-authzn-backend";
 import { pbkdf2Sync } from "pbkdf2"
 import { credentialCreate, credentialGet } from './webauthn';
 
 // ------------------------------------------------------------------
+
+export interface AppConfig {
+  sapphireJsonRpc: string;
+  webauthContract: string;
+  sapphireChainId: number;
+}
+
+// ------------------------------------------------------------------
+
+function setVisibility(x:HTMLElement, hidden:boolean|undefined) {
+  x.style.visibility = hidden ? 'visible' : 'hidden';
+}
+
+function setDisabled(element:HTMLElement, disabled:boolean) {
+  if( disabled ) {
+    return element.setAttribute('disabled', 'disabled');
+  }
+  element.removeAttribute('disabled');
+}
 
 /**
  * Displays wallet connectivity status and allows you to connect etc.
@@ -14,49 +33,76 @@ class WalletManager
 {
   status = document.querySelector<HTMLSpanElement>('#wallet-status')!;
   network = document.querySelector<HTMLSpanElement>('#wallet-network')!;
-  account = document.querySelector<HTMLSpanElement>('#wallet-account')!;
-  button = document.querySelector<HTMLButtonElement>('#wallet-button')!;
+  accounts = document.querySelector<HTMLSelectElement>('#wallet-accounts')!;
+  connect = document.querySelector<HTMLButtonElement>('#wallet-connect')!;
+  switch = document.querySelector<HTMLButtonElement>('#wallet-switch')!;
 
-  constructor (public providers:EthProviders) {
-    subscribe(providers, this.refresh.bind(this));
+  constructor (private _providers:EthProviders, private _config:AppConfig) {
+    subscribe(_providers, this.refresh.bind(this));
   }
 
   attach () {
-    this.button.addEventListener('click', this._onButton.bind(this));
+    this.connect.addEventListener('click', this._onConnectClick.bind(this));
+    this.switch.addEventListener('click', this._onSwitchClick.bind(this));
+    this.accounts.addEventListener('change', this._onAccounts.bind(this));
     this.refresh();
   }
 
-  async _onButton () {
-    const providers = this.providers;
+  async _onSwitchClick () {
+    this._providers.switchNetwork(this._config.sapphireChainId);
+  }
+
+  async _onConnectClick () {
+    const providers = this._providers;
     if( ! providers.connected ) {
       await providers.connect();
     }
   }
 
+  async _onAccounts () {
+    for( const o of this.accounts.selectedOptions ) {
+      const a = o.innerText;
+      this._providers.selectAccount(a);
+    }
+  }
+
   refresh () {
-    const wallet = this.providers.wallet;
-    const connected = this.providers.connected;
-    setDisabled(this.button, connected);
-    this.button.style.visibility = connected ? 'hidden' : 'visible';
-    this.status.innerText = 'Wallet ' + (connected ? 'Connected' : 'Disconnected');
-    if( wallet ) {
-      this.network.innerText = `Network: ${wallet.chainId}`;
-      this.account.innerText = wallet.address ?? "";
+    const p = this._providers;
+    const w = p.wallet;
+    const connected = p.connected;
+    setDisabled(this.connect, connected);
+    setVisibility(this.connect, !connected);
+    setVisibility(this.switch, w && w.chainId !== this._config.sapphireChainId);
+
+    this.status.innerText = connected ? 'Connected' : 'Not Connected';
+
+    // Populate dropdown list of accounts
+    this.accounts.innerHTML = '';
+    if( p.accounts.length ) {
+      for( let a of p.accounts ) {
+        const e = document.createElement('option');
+        e.innerText = a;
+        if( a == p.account ) {
+          e.setAttribute('selected', 'selected');
+        }
+        this.accounts.appendChild(e);
+      }
+      setDisabled(this.accounts, false);
+      setVisibility(this.accounts, true);
+    }
+    else {
+      setDisabled(this.accounts, true);
+      setVisibility(this.accounts, false);
+    }
+
+    if( w ) {
+      const name = w.network ? ` (${w.network.chainName})` : '';
+      this.network.innerText = `Network: ${w.chainId}${name}`;
     }
   }
 }
 
 // ------------------------------------------------------------------
-
-function setDisabled(element:HTMLElement, disabled:boolean)
-{
-  if( disabled ) {
-    element.setAttribute('disabled', 'disabled');
-  }
-  else {
-    element.removeAttribute('disabled');
-  }
-}
 
 /**
  * Manages the username widgets
@@ -97,12 +143,18 @@ class UsernameManager
   }
 
   get username () {
-    return this.usernameInput.value.toLowerCase();
+    const x = this.usernameInput.value.toLowerCase();
+    if( x.length ) {
+      return x;
+    }
   }
 
   async hashedUsername (username?: string) : Promise<Uint8Array> {
     if( ! username ) {
       username = this.username;
+    }
+    if( ! username ) {
+      throw new Error('Cannot hash undefined username!');
     }
     if( username in this._usernameHashesCache ) { // Cache pbkdf2 hashed usernames locally
       return this._usernameHashesCache[username];
@@ -111,7 +163,7 @@ class UsernameManager
       this._salt = ethers.utils.arrayify(await this.readonlyContract.salt());
     }
     const start = new Date();
-    const result = pbkdf2Sync(this.username, this._salt, 100_000, 32, 'sha256');
+    const result = pbkdf2Sync(username, this._salt, 100_000, 32, 'sha256');
     const end = new Date();
     console.log('pbkdf2', username, '=', end.getTime() - start.getTime(), 'ms');
     this._usernameHashesCache[username] = result;
@@ -120,18 +172,26 @@ class UsernameManager
 
   async _userExists(username:string) {
     const h = await this.hashedUsername(username);
-    return await this.readonlyContract.userExists(h);
+    if( h ) {
+      return await this.readonlyContract.userExists(h);
+    }
   }
 
   async _onCheck () {
-    if( await this.checkUsername(false) ) {
-      this.usernameStatus.innerText = 'Available';
+    try {
+      const available =  await this.checkUsername(false);
+      if( available ) {
+        this.usernameStatus.innerText = 'Available';
+      }
+    }
+    catch(e:any) {
+      this.usernameStatus.innerText = `Error: ${e}`;
     }
   }
 
   async checkUsername (mustExist:boolean) {
     this.usernameStatus.innerText = '...';
-    this.usernameSpinner.style.visibility = "visible";
+    setVisibility(this.usernameSpinner, true);
     try {
       const re = /^[a-zA-Z0-9_\.\-]+(@([a-zA-Z0-9\.\-]+))?$/;
       const username = this.username;
@@ -142,7 +202,7 @@ class UsernameManager
       if( ! re.test(username) ) {
         return this._finishCheckUsername('Bad Chars!');
       }
-      if( await this._userExists(this.username) ) {
+      if( await this._userExists(username) ) {
         if( ! mustExist ) {
           return this._finishCheckUsername('Already Exists!');
         }
@@ -153,7 +213,7 @@ class UsernameManager
       return this._finishCheckUsername('', true);
     }
     finally {
-      this.usernameSpinner.style.visibility = "hidden";
+      setVisibility(this.usernameSpinner, false);
     }
   }
 
@@ -168,17 +228,6 @@ class UsernameManager
 
 // ------------------------------------------------------------------
 
-/*
-function uint8array_to_base64( bytes: Uint8Array ) {
-  var binary = '';
-  var len = bytes.byteLength;
-  for (var i = 0; i < len; i++) {
-      binary += String.fromCharCode( bytes[ i ] );
-  }
-  return btoa( binary );
-}
-*/
-
 class WebAuthNManager
 {
   registerButton = document.querySelector<HTMLButtonElement>('#webauthn-register-button')!;
@@ -191,10 +240,10 @@ class WebAuthNManager
   usernameManager: UsernameManager;
 
   get readonlyContract () {
-    if( ! this._providers.up ) {
+    if( ! this._providers.swp ) {
       throw Error('Not connected!');
     }
-    return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.up);
+    return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.swp);
   }
 
   get signingContract () {
@@ -222,11 +271,15 @@ class WebAuthNManager
   }
 
   async _onRegister () {
-    this.registerSpinner.style.visibility = 'visible';
+    setVisibility(this.registerSpinner, true);
     try {
       if( await this.usernameManager.checkUsername(false) )
       {
         this.registerStatus.innerText = 'Requesting WebAuthN Creation';
+        const username = this.usernameManager.username;
+        if( ! username ) {
+          throw new Error('requires username');
+        }
         const hashedUsername = await this.usernameManager.hashedUsername();
         const challenge = crypto.getRandomValues(new Uint8Array(32));
         const cred = await credentialCreate({
@@ -234,8 +287,8 @@ class WebAuthNManager
           id: "localhost"
         }, {
           id: hashedUsername,
-          name: this.usernameManager.username,
-          displayName: this.usernameManager.username
+          name: username,
+          displayName: username
         }, challenge);
 
         const tx = await this.signingContract.registerECES256P256(hashedUsername, cred.id, cred.ad.at!.credentialPublicKey!)
@@ -245,24 +298,24 @@ class WebAuthNManager
       }
     }
     finally {
-      this.registerSpinner.style.visibility = 'hidden';
+      setVisibility(this.registerSpinner, false);
     }
   }
 
   async _onLogin () {
     try {
-      const hashedUsername = await this.usernameManager.hashedUsername();
       this.loginSpinner.style.visibility = 'visible';
       if( await this.usernameManager.checkUsername(true) )
       {
+        const hashedUsername = await this.usernameManager.hashedUsername();
         this.loginStatus.innerText = 'Fetching Credentials';
         const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
 
         const binaryCreds = credentials.map((_) => ethers.utils.arrayify(_));
-        //const b64Creds = binaryCreds.map((_) => uint8array_to_base64(_).replace(/=+$/, ""));
 
         const authed = await credentialGet(binaryCreds);
 
+        // Ask contract to verify our WebAuthN attestation
         const contract = this.readonlyContract;
         const resp = await contract.verify(
           authed.in_credentialIdHashed,
@@ -271,12 +324,9 @@ class WebAuthNManager
           authed.in_sigR,
           authed.in_sigS);
 
-        if( 0 == indexedDB.cmp(ethers.utils.arrayify(resp), hashedUsername) ) {
-          this.loginStatus.innerText = 'Success';
-        }
-        else {
-          this.loginStatus.innerText = 'Failure!';
-        }
+        // Display login status, why is Uint8Array comparison fkd in JS?
+        const success = 0 == indexedDB.cmp(ethers.utils.arrayify(resp), hashedUsername);
+        this.loginStatus.innerText = success ? 'Success' : 'Failure!';
       }
     }
     finally {
@@ -292,11 +342,11 @@ class App {
   walletManager: WalletManager;
   webauthnManager: WebAuthNManager;
 
-  constructor (public config: AppConfig) {
-    this.providers = new EthProviders(config);
-    this.walletManager = new WalletManager(this.providers);
-    this.webauthnManager = new WebAuthNManager(this.providers, config);
-    console.log('App Started', config);
+  constructor (_config: AppConfig) {
+    this.providers = new EthProviders();
+    this.walletManager = new WalletManager(this.providers, _config);
+    this.webauthnManager = new WebAuthNManager(this.providers, _config);
+    console.log('App Started', _config);
   }
 
   async attach () {
@@ -309,13 +359,14 @@ class App {
 // ------------------------------------------------------------------
 
 declare global {
-  var app: App;
+  var APP: App;
 }
 
 window.onload = async () => {
   const config = {
     sapphireJsonRpc: import.meta.env.VITE_SAPPHIRE_JSONRPC!,
-    webauthContract: import.meta.env.VITE_WEBAUTH_ADDR!
+    webauthContract: import.meta.env.VITE_WEBAUTH_ADDR!,
+    sapphireChainId: parseInt(import.meta.env.VITE_SAPPHIRE_CHAIN_ID!,16)
   } as AppConfig;
   if( ! config.webauthContract ) {
     throw Error('No WebAuthNExample contract address specified! (VITE_WEBAUTH_ADDR)');
@@ -324,7 +375,7 @@ window.onload = async () => {
     throw new Error('No Sapphire JSON RPC endpoint provided! (VITE_SAPPHIRE_JSONRPC)')
   }
 
-  globalThis.app = new App(config);
+  globalThis.APP = new App(config);
 
-  await globalThis.app.attach();
+  await globalThis.APP.attach();
 }

@@ -344,8 +344,9 @@ library SECP256R1
         internal pure
         returns(uint256 x1, uint256 y1, uint256 z1)
     {
+        scalar = scalar % N;
+
         require( scalar != 0, "multiply.scalar!=0" );
-        //require( scalar < N, "multiply.scalar<N" );
 
         unchecked {
             uint256 base2X = x0;

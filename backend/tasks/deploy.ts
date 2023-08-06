@@ -11,5 +11,7 @@ task("deploy", "Deploy contracts necessary for the frontend")
         const contract = await contractFactory.deploy();
         await contract.deployed();
 
+        const chainId = (await contract.provider.getNetwork()).chainId;
         console.log(`VITE_WEBAUTH_ADDR=${contract.address}`);
+        console.log(`VITE_CHAIN_ID=${chainId}`);
     });

@@ -3,8 +3,9 @@ import { ethers } from "hardhat"
 import { ec, curve } from "elliptic";
 import crypto from 'crypto';
 import { expect } from "chai";
-import { bufToBigint, bufToHex } from 'bigint-conversion'
+import { bufToHex } from 'bigint-conversion'
 import BN from 'bn.js';
+import { BigNumber } from "ethers";
 
 const secp256r1 = new ec('p256');
 
@@ -23,9 +24,6 @@ describe('SECP256R1', () => {
         c = await f.deploy()
         await c.deployed();
     });
-
-    // TODO: check anamolous curve points?
-
     it('Addition', async () => {
         for( let i = 0; i < 10; i++ ) {
             const kp1 = secp256r1.genKeyPair().getPublic();
@@ -82,22 +80,22 @@ describe('SECP256R1', () => {
         }
     });
 
-    // Used to wrap
+    // Used to wrap signatures so they're acceptable by EC library
     class SolSignature {
         r: BN;
         s: BN;
         recoveryParam: number | null;
 
-        constructor(r: BN, s: BN)
+        constructor(sig: {r: BigNumber, s: BigNumber})
         {
-            this.r = r;
-            this.s = s;
+            this.r = new BN(sig.r.toHexString().slice(2), 16),
+            this.s = new BN(sig.s.toHexString().slice(2), 16),
             this.recoveryParam = null;
         }
 
         toDER(): number[];
         toDER(enc: "hex"): string;
-        toDER(enc?: "hex"): string|number[] {
+        toDER(): string|number[] {
             throw new Error("toDER: not implemented!");
         }
     }
@@ -113,14 +111,11 @@ describe('SECP256R1', () => {
                 x: bn2u256(kp.getPublic().getX()),
                 y: bn2u256(kp.getPublic().getY())
             };
+
             const solsig = await c.ecdsa_sign_raw(secret, bn2u256(msg));
 
-            const x = new SolSignature(
-                new BN(solsig.r.toHexString().slice(2), 16),
-                new BN(solsig.s.toHexString().slice(2), 16));
-
             // Verify Solidity signature in JS
-            const jsressol = secp256r1.verify(msg, x, kp);
+            const jsressol = secp256r1.verify(msg, new SolSignature(solsig), kp);
             expect(jsressol).eq(true);
 
             // Verify Solidity signature in Solidity
