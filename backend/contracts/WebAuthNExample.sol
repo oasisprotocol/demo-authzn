@@ -98,7 +98,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         public view
         returns (bytes[] memory out_credentialIds)
     {
-        require( userExists(in_username), "credentialIdsByUsername: User doesn't exist" );
+        require( userExists(in_username), "credentialIdsByUsername" );
 
         bytes32[] storage credentialIdHashes = usernameToHashedCredentialIdList[in_username];
 
@@ -120,7 +120,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
     {
         bytes32 username = credentialsByHashedCredentialId[in_credentialIdHashed].username;
 
-        require( username != bytes32(0x0), "getUserFromHashedCredentialId: Hashed User Doesn't Exist" );
+        require( username != bytes32(0x0), "getUserFromHashedCredentialId" );
 
         return users[username];
     }
@@ -133,10 +133,10 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
         credential = credentialsByHashedCredentialId[in_credentialIdHashed];
 
-        require( user.username == credential.username, "getCredentialAndUser: Username Doesn't Match" );
+        require( user.username == credential.username, "getCredentialAndUser" );
     }
 
-    function verify (
+    function verifyECES256P256 (
         bytes32 in_credentialIdHashed,
         bytes memory in_authenticatorData,
         bytes memory in_clientDataJSON,
@@ -150,7 +150,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
         bytes32 digest = sha256(abi.encodePacked(in_authenticatorData, sha256(in_clientDataJSON)));
 
-        require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_sigR, in_sigS), "verify: Signature Failed!" );
+        require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_sigR, in_sigS), "verifyECES256P256" );
 
         return user.username;
     }

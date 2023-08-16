@@ -3,11 +3,9 @@
 import { TestP256R1 } from "../typechain-types";
 import { ethers } from "hardhat"
 import { ec } from "elliptic";
-import crypto from 'crypto';
+import { getRandomValues } from 'crypto';
 import { expect } from "chai";
-import { bufToHex } from 'bigint-conversion'
 import BN from 'bn.js';
-import { BigNumber } from "ethers";
 
 const secp256r1 = new ec('p256');
 
@@ -21,11 +19,34 @@ describe('SECP256R1', () => {
     before(async () => {
         const lf = await ethers.getContractFactory('SECP256R1');
         const ll = await lf.deploy();
-        await ll.deployed();
+        await ll.waitForDeployment();
 
-        const f = await ethers.getContractFactory('TestP256R1', {libraries: {SECP256R1: ll.address}});
+        const f = await ethers.getContractFactory('TestP256R1', {libraries: {SECP256R1: await ll.getAddress()}});
         c = await f.deploy()
-        await c.deployed();
+        await c.waitForDeployment();
+    });
+
+    it('Multiply by Order is Identity Element!', async () => {
+        const kp = secp256r1.genKeyPair();
+        const pk = kp.getPublic();
+        const x1 = bn2u256(pk.getX());
+        const y1 = bn2u256(pk.getY());
+        const s = bn2u256(secp256r1.n!);
+        const r = await c.multiply(x1, y1, s);
+        expect(r[0]).eq(0);
+        expect(r[1]).eq(0);
+
+        const t = await c.multiply(x1, y1, 0);
+        expect(t[0]).eq(0);
+        expect(t[1]).eq(0);
+
+        // Then multiply by N-1, then add the point again
+        const pknm1 = pk.mul(secp256r1.n!.sub(new BN(1)));
+        const x2 = bn2u256(pknm1.getX());
+        const y2 = bn2u256(pknm1.getY());
+        const blah = await c.add(x1, y1, x2, y2);
+        expect(blah.x3).eq(0);
+        expect(blah.y3).eq(0);
     });
 
     it('Addition', async () => {
@@ -70,7 +91,8 @@ describe('SECP256R1', () => {
 
             const x1 = bn2u256(kp1.getX());
             const y1 = bn2u256(kp1.getY());
-            const secret = new BN(bufToHex(crypto.getRandomValues(new Uint8Array(32))), 16).mod(secp256r1.n!);
+            const secretBytes = getRandomValues(new Uint8Array(32));
+            const secret = new BN(secretBytes).mod(secp256r1.n!);
             const kp2 = kp1.mul(secret);
 
             const sbn = bn2u256(secret);
@@ -90,10 +112,10 @@ describe('SECP256R1', () => {
         s: BN;
         recoveryParam: number | null;
 
-        constructor(sig: {r: BigNumber, s: BigNumber})
+        constructor(sig: {r: bigint, s: bigint})
         {
-            this.r = new BN(sig.r.toHexString().slice(2), 16),
-            this.s = new BN(sig.s.toHexString().slice(2), 16),
+            this.r = new BN(sig.r.toString(16), 16),
+            this.s = new BN(sig.s.toString(16), 16),
             this.recoveryParam = null;
         }
 
@@ -107,7 +129,8 @@ describe('SECP256R1', () => {
     it('EcDSA', async () => {
         for( let i = 0; i < 5; i++ )
         {
-            const msg = new BN(bufToHex(crypto.getRandomValues(new Uint8Array(32))), 16);
+            const msgBytes = getRandomValues(new Uint8Array(32));
+            const msg = new BN(msgBytes);
             const kp = secp256r1.genKeyPair();
 
             const secret = bn2u256(kp.getPrivate());

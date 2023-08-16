@@ -3,6 +3,7 @@ import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 
 import "./tasks/deploy";
+//require('./tasks/deploy');
 
 const TEST_HDWALLET = {
   mnemonic: "test test test test test test test test test test test junk",
@@ -15,6 +16,9 @@ const TEST_HDWALLET = {
 const accounts = process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : TEST_HDWALLET;
 
 const config: HardhatUserConfig = {
+  typechain: {
+    target: "ethers-v6"
+  },
   solidity: {
     version: "0.8.17",
     settings: {

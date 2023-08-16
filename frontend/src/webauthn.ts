@@ -1,6 +1,6 @@
 import {CBOR} from "cbor-redux";
 import * as asn1js from "asn1js";
-import { utils } from "ethers";
+import { keccak256, toBigInt } from "ethers";
 
 function toU32(buf:Uint8Array) {
     return (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
@@ -24,8 +24,8 @@ interface COSEPublicKey_EC {
     kty: number,
     alg: number,
     crv: number,
-    x: Uint8Array,
-    y: Uint8Array
+    x: bigint,
+    y: bigint
 }
 
 type COSEPublicKey = COSEPublicKey_EC;
@@ -45,9 +45,9 @@ function COSEPublicKey_decode (buf:ArrayBufferLike) : COSEPublicKey
             kty,
             alg: cpk[3],
             crv: cpk[-1],
-            x: cpk[-2],
+            x: toBigInt(cpk[-2]),
             /** @type {Uint8Array} */
-            y: cpk[-3]
+            y: toBigInt(cpk[-3]!)
         } as COSEPublicKey_EC;
 
         // Restrict to specific supported algorithms
@@ -208,7 +208,7 @@ export async function credentialGet(credentials:Uint8Array[])
     const r = result.r.toBigInt();
     const s = result.s.toBigInt();
     return {
-        in_credentialIdHashed: utils.arrayify(utils.keccak256(new Uint8Array(authed.rawId))),
+        in_credentialIdHashed: keccak256(new Uint8Array(authed.rawId)),
         in_authenticatorData: new Uint8Array(resp.authenticatorData),
         in_clientDataJSON: new Uint8Array(resp.clientDataJSON),
         in_sigR: r,
