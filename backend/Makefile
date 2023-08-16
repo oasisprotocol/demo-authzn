@@ -1,5 +1,6 @@
 all:
 	pnpm hardhat compile
+	pnpm hardhat typechain
 	pnpm tsc --build
 
 deploy-local:

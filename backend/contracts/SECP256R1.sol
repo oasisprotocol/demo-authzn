@@ -84,8 +84,8 @@ library SECP256R1
         (ax, ay, az) = sw_add(ax, ay, az, bx, by, bz);
         (ax, ay) = to_affine(ax, ay, az);
 
-        // 5.1 If `(x_1, y_1) = O` then the signature is invalid.
-        // TODO: check if it's identity element
+        // 5.1 If `(x_1, y_1) = O` (identity element) then the signature is invalid.
+        require( ax != 0 || ay != 0, "ecdsa_verify_raw.not_identity!" );
 
         // 6. The signature is valid if `r ≡ x 1 (mod n)`
         return r == (ax % N);
@@ -346,6 +346,10 @@ library SECP256R1
         returns(uint256 x1, uint256 y1, uint256 z1)
     {
         scalar = scalar % N;
+
+        if( scalar == 0 ) {
+            return (0, 0, 1);
+        }
 
         require( scalar != 0, "multiply.scalar!=0" );
 

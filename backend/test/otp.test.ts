@@ -40,7 +40,7 @@ describe('OTP', function () {
           const counter = randU32();
           const key = randomBytes(i);
           const local_result = HOTP_generate({key, algorithm, counter});
-          const result = await otpsha256.HOTP(key, counter);
+          const result = await contract.HOTP(key, counter);
           expect(result.toString().padStart(6, '0')).to.be.equal(local_result);
       }
     }

@@ -10,16 +10,13 @@
     "@oasisprotocol/sapphire-contracts": "^0.2.4"
   },
   "devDependencies": {
-    "@ethersproject/abi": "^5.7.0",
-    "@ethersproject/providers": "^5.7.2",
-    "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
     "@oasisprotocol/sapphire-hardhat": "^2.16.1",
     "@types/bn.js": "^5.1.1",
     "@types/elliptic": "^6.4.14",
-    "bigint-conversion": "^2.4.1",
     "bn.js": "^5.2.1",
     "elliptic": "^6.5.4",
-    "ethers": "^5.7.2",
+    "ethers": "^6.7.1",
     "hardhat": "^2.17.0"
   }
 }

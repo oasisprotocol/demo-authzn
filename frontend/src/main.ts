@@ -1,9 +1,10 @@
-import { EthProviders } from './ctx'
 import { subscribe } from "exome";
-import { ethers } from "ethers";
+import { toBeArray } from "ethers";
 import { WebAuthNExample__factory } from "demo-authzn-backend";
 import { pbkdf2Sync } from "pbkdf2"
-import { credentialCreate, credentialGet } from './webauthn';
+
+import { EthProviders } from './ctx.ts'
+import { credentialCreate, credentialGet } from './webauthn.ts';
 
 // ------------------------------------------------------------------
 
@@ -41,7 +42,7 @@ class WalletManager
     subscribe(_providers, this.refresh.bind(this));
   }
 
-  attach () {
+  async attach () {
     this.connect.addEventListener('click', this._onConnectClick.bind(this));
     this.switch.addEventListener('click', this._onSwitchClick.bind(this));
     this.accounts.addEventListener('change', this._onAccounts.bind(this));
@@ -135,7 +136,7 @@ class UsernameManager
     if( ! this._providers.swp ) {
       throw Error('Not connected!');
     }
-    return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.swp);
+    return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.up);
   }
 
   async attach () {
@@ -160,7 +161,7 @@ class UsernameManager
       return this._usernameHashesCache[username];
     }
     if( this._salt === null ) { // Retirve contract salt only once
-      this._salt = ethers.utils.arrayify(await this.readonlyContract.salt());
+      this._salt = toBeArray(await this.readonlyContract.salt());
     }
     const start = new Date();
     const result = pbkdf2Sync(username, this._salt, 100_000, 32, 'sha256');
@@ -282,19 +283,38 @@ class WebAuthNManager
         }
         const hashedUsername = await this.usernameManager.hashedUsername();
         const challenge = crypto.getRandomValues(new Uint8Array(32));
-        const cred = await credentialCreate({
-          name: "blah",
-          id: "localhost"
-        }, {
-          id: hashedUsername,
-          name: username,
-          displayName: username
-        }, challenge);
 
-        const tx = await this.signingContract.registerECES256P256(hashedUsername, cred.id, cred.ad.at!.credentialPublicKey!)
-        this.registerStatus.innerText = `Registering (tx: ${tx.hash})`;
-        const receipt = await tx.wait();
-        this.registerStatus.innerText = `Registered (block: ${receipt.blockNumber}, tx: ${tx.hash})`;
+        let cred;
+        try {
+          cred = await credentialCreate({
+            name: "Sapphire-Auth[ZN]",
+            id: window.location.hostname
+          }, {
+            id: hashedUsername,
+            name: username,
+            displayName: username
+          }, challenge);
+        }
+        catch( e: any ) {
+          this.registerStatus.innerText = `${e}`;
+          return;
+        }
+
+        try {
+          const tx = await this.signingContract.registerECES256P256(hashedUsername, cred.id, cred.ad.at!.credentialPublicKey!)
+          this.registerStatus.innerText = `Registering (tx: ${tx.hash})`;
+          const receipt = await tx.wait();
+          this.registerStatus.innerText = `Registered (block: ${receipt!.blockNumber}, tx: ${tx.hash})`;
+        }
+        catch( e:any ) {
+          if( e.info && e.info.error ) {
+            this.registerStatus.innerText = `${e.info.error.code}: ${e.info.error.message}`;
+          }
+          else {
+            this.registerStatus.innerText = `${e}`;
+          }
+          return;
+        }
       }
     }
     finally {
@@ -307,17 +327,15 @@ class WebAuthNManager
       this.loginSpinner.style.visibility = 'visible';
       if( await this.usernameManager.checkUsername(true) )
       {
-        const hashedUsername = await this.usernameManager.hashedUsername();
         this.loginStatus.innerText = 'Fetching Credentials';
+        const hashedUsername = await this.usernameManager.hashedUsername();
         const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
-
-        const binaryCreds = credentials.map((_) => ethers.utils.arrayify(_));
-
+        const binaryCreds = credentials.map((_) => toBeArray(_));
         const authed = await credentialGet(binaryCreds);
 
         // Ask contract to verify our WebAuthN attestation
         const contract = this.readonlyContract;
-        const resp = await contract.verify(
+        const resp = await contract.verifyECES256P256(
           authed.in_credentialIdHashed,
           authed.in_authenticatorData,
           authed.in_clientDataJSON,
@@ -325,7 +343,7 @@ class WebAuthNManager
           authed.in_sigS);
 
         // Display login status, why is Uint8Array comparison fkd in JS?
-        const success = 0 == indexedDB.cmp(ethers.utils.arrayify(resp), hashedUsername);
+        const success = 0 == indexedDB.cmp(toBeArray(resp), hashedUsername);
         this.loginStatus.innerText = success ? 'Success' : 'Failure!';
       }
     }
@@ -351,7 +369,7 @@ class App {
 
   async attach () {
     await this.providers.attach();
-    this.walletManager.attach();
+    await this.walletManager.attach();
     await this.webauthnManager.attach();
   }
 }
@@ -364,9 +382,9 @@ declare global {
 
 window.onload = async () => {
   const config = {
-    sapphireJsonRpc: import.meta.env.VITE_SAPPHIRE_JSONRPC!,
-    webauthContract: import.meta.env.VITE_WEBAUTH_ADDR!,
-    sapphireChainId: parseInt(import.meta.env.VITE_SAPPHIRE_CHAIN_ID!,16)
+    sapphireJsonRpc: process.env.VITE_SAPPHIRE_JSONRPC!,
+    webauthContract: process.env.VITE_WEBAUTH_ADDR!,
+    sapphireChainId: parseInt(process.env.VITE_SAPPHIRE_CHAIN_ID!,16)
   } as AppConfig;
   if( ! config.webauthContract ) {
     throw Error('No WebAuthNExample contract address specified! (VITE_WEBAUTH_ADDR)');

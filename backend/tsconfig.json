@@ -1,12 +1,23 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "commonjs",
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
+    "target": "ES2020",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "Node16",
     "skipLibCheck": true,
+
+    "forceConsistentCasingInFileNames": true,
     "composite": true,
-    "outDir": "dist"
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "outDir": "dist",
+
+    /* Bundler mode */
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
 }

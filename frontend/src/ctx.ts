@@ -2,7 +2,7 @@ import * as sapphire from "@oasisprotocol/sapphire-paratime";
 import { ethers } from "ethers";
 import detectEthereumProvider from '@metamask/detect-provider';
 import { Exome } from "exome"
-import { NETWORKS, NetworkDefinition } from "./networks";
+import { NETWORKS, NetworkDefinition } from "./networks.ts";
 
 // ------------------------------------------------------------------
 
@@ -53,11 +53,13 @@ export interface EthWallet {
 
 export class EthProviders extends Exome
 {
+    public up?: ethers.BrowserProvider;
+
     // Sapphire Wrapped Provider
-    public swp?: ethers.providers.JsonRpcProvider & sapphire.SapphireAnnex;
+    public swp?: ethers.BrowserProvider & sapphire.SapphireAnnex;
 
     // Sapphire Wrapped Signer
-    public sws?: ethers.providers.JsonRpcSigner & sapphire.SapphireAnnex;
+    public sws?: ethers.JsonRpcSigner & sapphire.SapphireAnnex;
 
     // window.ethereum
     public eth?: MetaMaskEthereumProvider;
@@ -211,11 +213,11 @@ export class EthProviders extends Exome
             address
         };
 
-        const up = new ethers.providers.Web3Provider(this.eth);
+        this.up = new ethers.BrowserProvider(this.eth);
 
-        this.swp = sapphire.wrap(up);
+        this.swp = sapphire.wrap(this.up);
 
-        this.sws = sapphire.wrap(up.getSigner(address));
+        this.sws = sapphire.wrap(await this.up.getSigner(address));
 
         return true;
     }
