@@ -3,7 +3,7 @@
 The MIT License (MIT)
 
 Copyright (c) 2016 chriseth
-Copyright (c) 2023 HarryR
+Copyright (c) 2023 oasisprotocol.org
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,18 +26,16 @@ SOFTWARE.
 
 pragma solidity ^0.8.0;
 
-import {SHA1} from "./SHA1.sol";
-
 // Borrowed from: https://github.com/TrueBitFoundation/scrypt-interactive/blob/ea81863045623856408184e968ca61eb1caa83f9/contracts/ScryptFramework.sol#L424
-function HMAC_sha1(bytes memory key, bytes memory message)
+function HMAC_sha256(bytes memory key, bytes memory message)
     pure
-    returns (bytes20)
+    returns (bytes32)
 {
     bytes32 keyl;
     bytes32 keyr;
     uint i;
     if (key.length > 64) {
-        keyl = SHA1.sha1(key);
+        keyl = sha256(key);
     } else {
         for (i = 0; i < key.length && i < 32; i++) {
             keyl |= bytes32(uint256(uint8(key[i])) * 2**(8 * (31 - i)));
@@ -48,10 +46,10 @@ function HMAC_sha1(bytes memory key, bytes memory message)
     }
     bytes32 threesix = 0x3636363636363636363636363636363636363636363636363636363636363636;
     bytes32 fivec = 0x5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c;
-    return SHA1.sha1(
+    return sha256(
         abi.encodePacked(fivec ^ keyl,
                          fivec ^ keyr,
-                         SHA1.sha1(
+                         sha256(
                             abi.encodePacked(
                                 threesix ^ keyl,
                                 threesix ^ keyr,
@@ -60,12 +58,12 @@ function HMAC_sha1(bytes memory key, bytes memory message)
 
 // See: https://en.wikipedia.org/wiki/HMAC-based_one-time_password
 //      https://datatracker.ietf.org/doc/html/rfc4226
-function HOTP_sha1(bytes memory K, uint64 C)
+function HOTP_sha256(bytes memory K, uint64 C)
     pure
     returns (uint)
 {
-    bytes20 mac = HMAC_sha1(K, abi.encodePacked(C));
-    uint8 offset = uint8(mac[19]) & 0x0f;
+    bytes32 mac = HMAC_sha256(K, abi.encodePacked(C));
+    uint8 offset = uint8(mac[31]) & 0x0f;
     uint res = (uint(uint8(mac[offset])) & 0x7f) << 24
              | uint(uint8(mac[offset + 1])) << 16
              | uint(uint8(mac[offset + 2])) << 8
@@ -73,9 +71,9 @@ function HOTP_sha1(bytes memory K, uint64 C)
     return res % (10**6);
 }
 
-function TOTP_sha1(bytes memory K, uint32 time_step, uint32 when)
+function TOTP_sha256(bytes memory K, uint32 time_step, uint32 when)
     pure
     returns (uint)
 {
-    return HOTP_sha1(K, when / time_step);
+    return HOTP_sha256(K, when / time_step);
 }

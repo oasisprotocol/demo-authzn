@@ -3,7 +3,9 @@
 pragma solidity ^0.8.0;
 
 import {Sapphire} from "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
-import {Point256, SECP256R1} from "./SECP256R1.sol";
+import {Point256, SECP256R1} from "./lib/SECP256R1.sol";
+import {MakeJSON} from "./lib/MakeJSON.sol";
+import {Base64URL} from "./lib/Base64URL.sol";
 
 struct UserCredential {
     Point256 pubkey;
@@ -31,10 +33,14 @@ contract WebAuthNExampleStorage {
     mapping(bytes32 => UserCredential) internal credentialsByHashedCredentialId;
 
     bytes32 internal challengeSecret;
+
+    bytes32 public salt;
 }
 
 contract WebAuthNExample is WebAuthNExampleStorage {
-    bytes32 public salt;
+    bytes32 constant private CHALLENGE_KEY_HASH = keccak256("challenge");
+    bytes32 constant private TYPE_KEY_HASH = keccak256("type");
+    bytes32 constant private WEBAUTHN_GET_HASH = keccak256("webauthn.get");
 
     constructor () {
         challengeSecret = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
@@ -136,10 +142,51 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         require( user.username == credential.username, "getCredentialAndUser" );
     }
 
+    /**
+     * Verify the clientDataJSON structure
+     * @custom:see https://developer.mozilla.org/en-US/docs/Web/API/AuthenticatorResponse/clientDataJSON
+     * @param in_challenge Authenticator challenge (32 bytes)
+     * @param in_clientDataTokens JSON data split into key/value tokens (see: MakeJSON.sol)
+     */
+    function verifyClientDataTokens (
+        bytes32 in_challenge,
+        MakeJSON.KeyValue[] calldata in_clientDataTokens
+    )
+        internal pure
+        returns (bool)
+    {
+        // Verify the raw challenge matches what's in the JSON
+        string memory challengeBase64 = Base64URL.encode(abi.encodePacked(in_challenge), false);
+        bytes32 challengeBase64Hashed = keccak256(bytes(challengeBase64));
+
+        bool isTypeOk = false;      // type == webauthn.get
+        bool isChallengeOk = false;
+
+        for( uint i = 0; i < in_clientDataTokens.length; i++ )
+        {
+            MakeJSON.KeyValue calldata item = in_clientDataTokens[i];
+            bytes32 keyHash = keccak256(bytes(item.k));
+            bytes32 valueHash = keccak256(bytes(item.v));
+
+            if( keyHash == CHALLENGE_KEY_HASH )
+            {
+                isChallengeOk = challengeBase64Hashed == valueHash;
+            }
+            else if( keyHash == TYPE_KEY_HASH ) {
+                isTypeOk = valueHash == WEBAUTHN_GET_HASH;
+            }
+
+            // Other keys are ignored
+        }
+
+        return isChallengeOk && isTypeOk;
+    }
+
     function verifyECES256P256 (
         bytes32 in_credentialIdHashed,
-        bytes memory in_authenticatorData,
-        bytes memory in_clientDataJSON,
+        bytes calldata in_authenticatorData,
+        MakeJSON.KeyValue[] calldata in_clientDataTokens,
+        bytes32 in_challenge,
         uint256 in_sigR,
         uint256 in_sigS
     )
@@ -148,7 +195,11 @@ contract WebAuthNExample is WebAuthNExampleStorage {
     {
         (User memory user, UserCredential memory credential) = getCredentialAndUser(in_credentialIdHashed);
 
-        bytes32 digest = sha256(abi.encodePacked(in_authenticatorData, sha256(in_clientDataJSON)));
+        require( verifyClientDataTokens(in_challenge, in_clientDataTokens), "verifyClientDataTokens" );
+
+        string memory in_clientDataJSON = MakeJSON.from(in_clientDataTokens);
+
+        bytes32 digest = sha256(abi.encodePacked(in_authenticatorData, sha256(abi.encodePacked(in_clientDataJSON))));
 
         require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_sigR, in_sigS), "verifyECES256P256" );
 

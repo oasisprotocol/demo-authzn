@@ -351,8 +351,6 @@ library SECP256R1
             return (0, 0, 1);
         }
 
-        require( scalar != 0, "multiply.scalar!=0" );
-
         unchecked {
             uint256 base2X = x0;
             uint256 base2Y = y0;

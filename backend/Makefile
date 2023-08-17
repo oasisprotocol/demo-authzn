@@ -1,9 +1,13 @@
-all:
+all: compile
+
+compile:
 	pnpm hardhat compile
 	pnpm hardhat typechain
 	pnpm tsc --build
 
-deploy-local:
+deploy:
+
+deploy-local: compile
 	pnpm hardhat --network sapphire-localnet deploy | tee ../frontend/.env.local
 
 test: test-local

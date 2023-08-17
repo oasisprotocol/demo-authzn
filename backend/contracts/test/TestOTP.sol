@@ -2,8 +2,8 @@
 
 pragma solidity ^0.8.0;
 
-import {HOTP_sha1, HMAC_sha1, TOTP_sha1} from "../OTPSHA1.sol";
-import {HOTP_sha256, HMAC_sha256, TOTP_sha256} from "../OTPSHA256.sol";
+import {HOTP_sha1, HMAC_sha1, TOTP_sha1} from "../lib/OTPSHA1.sol";
+import {HOTP_sha256, HMAC_sha256, TOTP_sha256} from "../lib/OTPSHA256.sol";
 
 contract TestOTPSHA1 {
     function HOTP(bytes memory K, uint64 C)

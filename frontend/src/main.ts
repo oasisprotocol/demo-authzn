@@ -136,7 +136,7 @@ class UsernameManager
     if( ! this._providers.swp ) {
       throw Error('Not connected!');
     }
-    return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.up);
+    return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.swp);
   }
 
   async attach () {
@@ -338,7 +338,8 @@ class WebAuthNManager
         const resp = await contract.verifyECES256P256(
           authed.in_credentialIdHashed,
           authed.in_authenticatorData,
-          authed.in_clientDataJSON,
+          authed.in_clientDataTokens,
+          authed.in_challenge,
           authed.in_sigR,
           authed.in_sigS);
 
