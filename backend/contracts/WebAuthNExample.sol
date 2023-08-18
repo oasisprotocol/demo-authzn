@@ -6,6 +6,8 @@ import {Sapphire} from "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol
 import {Point256, SECP256R1} from "./lib/SECP256R1.sol";
 import {MakeJSON} from "./lib/MakeJSON.sol";
 import {Base64URL} from "./lib/Base64URL.sol";
+import {CloneFactory} from "./lib/CloneFactory.sol";
+import {Account} from "./Account.sol";
 
 struct UserCredential {
     Point256 pubkey;
@@ -23,6 +25,7 @@ struct CosePublicKey {
 
 struct User {
     bytes32 username;
+    Account account;
 }
 
 contract WebAuthNExampleStorage {
@@ -42,9 +45,14 @@ contract WebAuthNExample is WebAuthNExampleStorage {
     bytes32 constant private TYPE_KEY_HASH = keccak256("type");
     bytes32 constant private WEBAUTHN_GET_HASH = keccak256("webauthn.get");
 
+    Account private accountDelegate;
+
     constructor () {
         challengeSecret = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
+
         salt = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
+
+        accountDelegate = new Account();
     }
 
     function userExists (bytes32 in_username)
@@ -56,21 +64,10 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         return user.username != bytes32(0x0);
     }
 
-    /**
-     * Deterministic per-keypair challenge
-     * @param pubkey X & Y coordinates of EC point
-     */
-    function challenge (uint256[2] memory pubkey)
-        public view
-        returns (bytes32)
-    {
-        return keccak256(abi.encodePacked(challengeSecret, pubkey));
-    }
-
     function registerECES256P256 (
         bytes32 in_username,
-        bytes memory in_credentialId,
-        CosePublicKey memory in_pubkey
+        bytes calldata in_credentialId,
+        CosePublicKey calldata in_pubkey
     )
         external
     {
@@ -85,6 +82,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
         User storage user = users[in_username];
         user.username = in_username;
+        user.account = Account(CloneFactory.createClone(address(accountDelegate)));
 
         bytes32 hashedCredentialId = keccak256(in_credentialId);
         credentialsByHashedCredentialId[hashedCredentialId] = UserCredential({
