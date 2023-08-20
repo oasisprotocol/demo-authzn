@@ -1,10 +1,11 @@
 import { subscribe } from "exome";
-import { toBeArray } from "ethers";
+import { sha256, toBeArray } from "ethers";
 import { WebAuthNExample__factory } from "demo-authzn-backend";
 import { pbkdf2Sync } from "pbkdf2"
 
 import { EthProviders } from './ctx.ts'
 import { credentialCreate, credentialGet } from './webauthn.ts';
+import { Account__factory } from "demo-authzn-backend/typechain-types/index.ts";
 
 // ------------------------------------------------------------------
 
@@ -238,6 +239,10 @@ class WebAuthNManager
   loginStatus = document.querySelector<HTMLSpanElement>('#webauthn-login-status')!;
   loginSpinner = document.querySelector<HTMLImageElement>('#webauthn-login-spinner')!;
 
+  testButton = document.querySelector<HTMLButtonElement>('#webauthn-test-button')!;
+  testStatus = document.querySelector<HTMLSpanElement>('#webauthn-test-status')!;
+  testSpinner = document.querySelector<HTMLImageElement>('#webauthn-test-spinner')!;
+
   usernameManager: UsernameManager;
 
   get readonlyContract () {
@@ -263,11 +268,13 @@ class WebAuthNManager
     const disabled = ! this._providers.connected;
     setDisabled(this.registerButton, disabled);
     setDisabled(this.loginButton, disabled);
+    setDisabled(this.testButton, disabled);
   }
 
   async attach () {
     this.registerButton.addEventListener('click', this._onRegister.bind(this));
     this.loginButton.addEventListener('click', this._onLogin.bind(this));
+    this.testButton.addEventListener('click', this._onTest.bind(this));
     await this.usernameManager.attach();
   }
 
@@ -304,7 +311,7 @@ class WebAuthNManager
           const tx = await this.signingContract.registerECES256P256(hashedUsername, cred.id, cred.ad.at!.credentialPublicKey!)
           this.registerStatus.innerText = `Registering (tx: ${tx.hash})`;
           const receipt = await tx.wait();
-          this.registerStatus.innerText = `Registered (block: ${receipt!.blockNumber}, tx: ${tx.hash})`;
+          this.registerStatus.innerText = `Registered (block: ${receipt!.blockNumber}, tx: ${tx.hash}, gas: ${receipt!.gasUsed})`;
         }
         catch( e:any ) {
           if( e.info && e.info.error ) {
@@ -334,22 +341,48 @@ class WebAuthNManager
         const authed = await credentialGet(binaryCreds);
 
         // Ask contract to verify our WebAuthN attestation
-        const contract = this.readonlyContract;
-        const resp = await contract.verifyECES256P256(
-          authed.in_credentialIdHashed,
-          authed.in_authenticatorData,
-          authed.in_clientDataTokens,
-          authed.in_challenge,
-          authed.in_sigR,
-          authed.in_sigS);
+        const resp = await this.readonlyContract.verifyECES256P256(
+          authed.credentialIdHashed,
+          authed.challenge,
+          authed.resp);
 
         // Display login status, why is Uint8Array comparison fkd in JS?
-        const success = 0 == indexedDB.cmp(toBeArray(resp), hashedUsername);
-        this.loginStatus.innerText = success ? 'Success' : 'Failure!';
+        const success = 0 == indexedDB.cmp(toBeArray(resp.username), hashedUsername);
+        this.loginStatus.innerText = success ? `Success (${resp.account})` : 'Failure!';
       }
     }
     finally {
       this.loginSpinner.style.visibility = 'hidden';
+    }
+  }
+
+  async _onTest () {
+    setVisibility(this.testSpinner, true);
+    try {
+      this.testStatus.innerText = 'Fetching Credentials';
+      const ai = Account__factory.createInterface();
+      const randStuff = crypto.getRandomValues(new Uint8Array(32));
+      const calldata = ai.encodeFunctionData("sign", [randStuff]);
+      console.log('calldata is', calldata);
+      console.log('calldata decoded is', ai.decodeFunctionData('sign', calldata));
+
+      const challenge = toBeArray(sha256(calldata));
+      const hashedUsername = await this.usernameManager.hashedUsername();
+      const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
+      const binaryCreds = credentials.map((_) => toBeArray(_));
+      const authed = await credentialGet(binaryCreds, challenge);
+
+      console.log('ROC', await this.readonlyContract.getAddress());
+      const resp = await this.readonlyContract.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
+      const respDecoded = ai.decodeFunctionResult('sign', resp);
+      console.log(respDecoded);
+      this.testStatus.innerText = `${respDecoded}`;
+    }
+    catch( e:any ) {
+      this.testStatus.innerText = `${e}`;
+    }
+    finally {
+      setVisibility(this.testSpinner, false);
     }
   }
 }

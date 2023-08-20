@@ -29,8 +29,11 @@ pragma solidity ^0.8.17;
 //solhint-disable max-line-length
 //solhint-disable no-inline-assembly
 
-library CloneFactory {
-  function createClone(address target) internal returns (address result) {
+contract CloneFactory {
+  function createClone(address target)
+    internal
+    returns (address result)
+  {
     bytes20 targetBytes = bytes20(target);
     assembly {
       let clone := mload(0x40)

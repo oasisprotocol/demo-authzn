@@ -220,9 +220,11 @@ var asn1_sig_schema = new asn1js.Sequence({
   });
 
 
-export async function credentialGet(credentials:Uint8Array[])
+export async function credentialGet(credentials:Uint8Array[], challenge?: Uint8Array)
 {
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    if( ! challenge ) {
+        challenge = crypto.getRandomValues(new Uint8Array(32));
+    }
 
     const authed = await navigator.credentials.get({
         publicKey: {
@@ -233,24 +235,25 @@ export async function credentialGet(credentials:Uint8Array[])
 
     const resp = authed.response as AuthenticatorAssertionResponse;
 
-    const blah = asn1js.verifySchema(resp.signature, asn1_sig_schema);
-    if( ! blah.verified ) {
+    const decodedSignature = asn1js.verifySchema(resp.signature, asn1_sig_schema);
+    if( ! decodedSignature.verified ) {
         throw new Error("Unable to decode ASN.1 signature!");
     }
 
-    const result: {r:asn1js.Integer, s:asn1js.Integer} = blah.result as any;
+    const result: {r:asn1js.Integer, s:asn1js.Integer} = decodedSignature.result as any;
     const r = result.r.toBigInt();
     const s = result.s.toBigInt();
 
-    const cdj = JSON.parse(new TextDecoder().decode(resp.clientDataJSON));
-    const cdt = object2makejson(cdj);
-
+    const clientData = JSON.parse(new TextDecoder().decode(resp.clientDataJSON));
+    console.log(clientData);
     return {
-        in_credentialIdHashed: keccak256(new Uint8Array(authed.rawId)),
-        in_authenticatorData: new Uint8Array(resp.authenticatorData),
-        in_clientDataTokens: cdt,
-        in_challenge: challenge,
-        in_sigR: r,
-        in_sigS: s
+        credentialIdHashed: keccak256(new Uint8Array(authed.rawId)),
+        challenge: challenge,
+        resp: {
+            authenticatorData: new Uint8Array(resp.authenticatorData),
+            clientDataTokens: object2makejson(clientData),
+            sigR: r,
+            sigS: s
+        }
     };
 }

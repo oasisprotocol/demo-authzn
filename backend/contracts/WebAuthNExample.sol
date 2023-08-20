@@ -6,8 +6,7 @@ import {Sapphire} from "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol
 import {Point256, SECP256R1} from "./lib/SECP256R1.sol";
 import {MakeJSON} from "./lib/MakeJSON.sol";
 import {Base64URL} from "./lib/Base64URL.sol";
-import {CloneFactory} from "./lib/CloneFactory.sol";
-import {Account} from "./Account.sol";
+import {Account,AccountFactory} from "./lib/Account.sol";
 
 struct UserCredential {
     Point256 pubkey;
@@ -28,6 +27,13 @@ struct User {
     Account account;
 }
 
+struct AuthenticatorResponse {
+    bytes authenticatorData;
+    MakeJSON.KeyValue[] clientDataTokens;
+    uint256 sigR;
+    uint256 sigS;
+}
+
 contract WebAuthNExampleStorage {
     mapping(bytes32 => User) internal users;
 
@@ -45,14 +51,14 @@ contract WebAuthNExample is WebAuthNExampleStorage {
     bytes32 constant private TYPE_KEY_HASH = keccak256("type");
     bytes32 constant private WEBAUTHN_GET_HASH = keccak256("webauthn.get");
 
-    Account private accountDelegate;
+    AccountFactory private accountFactory;
 
     constructor () {
         challengeSecret = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
 
         salt = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
 
-        accountDelegate = new Account();
+        accountFactory = new AccountFactory();
     }
 
     function userExists (bytes32 in_username)
@@ -82,7 +88,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
         User storage user = users[in_username];
         user.username = in_username;
-        user.account = Account(CloneFactory.createClone(address(accountDelegate)));
+        user.account = accountFactory.clone(address(this));
 
         bytes32 hashedCredentialId = keccak256(in_credentialId);
         credentialsByHashedCredentialId[hashedCredentialId] = UserCredential({
@@ -182,25 +188,47 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
     function verifyECES256P256 (
         bytes32 in_credentialIdHashed,
-        bytes calldata in_authenticatorData,
-        MakeJSON.KeyValue[] calldata in_clientDataTokens,
         bytes32 in_challenge,
-        uint256 in_sigR,
-        uint256 in_sigS
+        AuthenticatorResponse calldata in_resp
     )
         public view
-        returns (bytes32)
+        returns (User memory user)
     {
-        (User memory user, UserCredential memory credential) = getCredentialAndUser(in_credentialIdHashed);
+        UserCredential memory credential;
 
-        require( verifyClientDataTokens(in_challenge, in_clientDataTokens), "verifyClientDataTokens" );
+        (user, credential) = getCredentialAndUser(in_credentialIdHashed);
 
-        string memory in_clientDataJSON = MakeJSON.from(in_clientDataTokens);
+        require( verifyClientDataTokens(in_challenge, in_resp.clientDataTokens), "verifyClientDataTokens" );
 
-        bytes32 digest = sha256(abi.encodePacked(in_authenticatorData, sha256(abi.encodePacked(in_clientDataJSON))));
+        string memory clientDataJSON = MakeJSON.from(in_resp.clientDataTokens);
 
-        require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_sigR, in_sigS), "verifyECES256P256" );
+        bytes32 digest = sha256(abi.encodePacked(in_resp.authenticatorData, sha256(abi.encodePacked(clientDataJSON))));
 
-        return user.username;
+        require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_resp.sigR, in_resp.sigS), "verifyECES256P256" );
+
+        return user;
+    }
+
+    function proxyViewECES256P256(
+        bytes32 in_credentialIdHashed,
+        AuthenticatorResponse calldata in_resp,
+        bytes memory in_data
+    )
+        public view
+        returns (bytes memory out_data)
+    {
+        bytes32 challenge = sha256(in_data);
+
+        User memory user = this.verifyECES256P256(in_credentialIdHashed, challenge, in_resp);
+
+        in_data = abi.encodeWithSelector(Account.sign.selector, "");
+
+        bool success;
+        (success, out_data) = address(user.account).staticcall(in_data);
+
+        assembly {
+            switch success
+            case 0 { revert(add(out_data,32),mload(out_data)) }
+        }
     }
 }

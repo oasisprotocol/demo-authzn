@@ -10,6 +10,7 @@
     "@oasisprotocol/sapphire-contracts": "^0.2.4"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.0.4",
     "@nomicfoundation/hardhat-toolbox": "^3.0.0",
     "@oasisprotocol/sapphire-hardhat": "^2.16.1",
     "@types/bn.js": "^5.1.1",
