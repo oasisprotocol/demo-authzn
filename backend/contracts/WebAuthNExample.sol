@@ -61,6 +61,13 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         accountFactory = new AccountFactory();
     }
 
+    function getUser (bytes32 in_username)
+        public view
+        returns (User memory user)
+    {
+        user = users[in_username];
+    }
+
     function userExists (bytes32 in_username)
         public view
         returns (bool)
@@ -217,13 +224,16 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         public view
         returns (bytes memory out_data)
     {
-        bytes32 challenge = sha256(in_data);
+        bytes32 personalization = sha256(abi.encodePacked(block.chainid, address(this), salt));
+
+        bytes32 challenge = sha256(abi.encodePacked(personalization, sha256(in_data)));
 
         User memory user = this.verifyECES256P256(in_credentialIdHashed, challenge, in_resp);
 
         in_data = abi.encodeWithSelector(Account.sign.selector, "");
 
         bool success;
+
         (success, out_data) = address(user.account).staticcall(in_data);
 
         assembly {

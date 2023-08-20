@@ -1,11 +1,12 @@
 import { subscribe } from "exome";
-import { sha256, toBeArray } from "ethers";
+import { sha256, toBeArray, toBeHex, toBigInt } from "ethers";
 import { WebAuthNExample__factory } from "demo-authzn-backend";
 import { pbkdf2Sync } from "pbkdf2"
 
 import { EthProviders } from './ctx.ts'
 import { credentialCreate, credentialGet } from './webauthn.ts';
 import { Account__factory } from "demo-authzn-backend/typechain-types/index.ts";
+import { EIP155Signer } from "demo-authzn-backend/typechain-types/contracts/lib/Account.sol/Account.ts";
 
 // ------------------------------------------------------------------
 
@@ -127,6 +128,13 @@ class UsernameManager
     subscribe(_providers, this._onProvidersUpdate.bind(this));
   }
 
+  async salt () {
+    if( this._salt === null ) { // Retirve contract salt only once
+      this._salt = toBeArray(await this.readonlyContract.salt());
+    }
+    return this._salt;
+  }
+
   async _onProvidersUpdate() {
     const disabled = ! this._providers.connected;
     setDisabled(this.usernameInput, disabled);
@@ -161,11 +169,9 @@ class UsernameManager
     if( username in this._usernameHashesCache ) { // Cache pbkdf2 hashed usernames locally
       return this._usernameHashesCache[username];
     }
-    if( this._salt === null ) { // Retirve contract salt only once
-      this._salt = toBeArray(await this.readonlyContract.salt());
-    }
+
     const start = new Date();
-    const result = pbkdf2Sync(username, this._salt, 100_000, 32, 'sha256');
+    const result = pbkdf2Sync(username, await this.salt(), 100_000, 32, 'sha256');
     const end = new Date();
     console.log('pbkdf2', username, '=', end.getTime() - start.getTime(), 'ms');
     this._usernameHashesCache[username] = result;
@@ -359,24 +365,47 @@ class WebAuthNManager
   async _onTest () {
     setVisibility(this.testSpinner, true);
     try {
-      this.testStatus.innerText = 'Fetching Credentials';
-      const ai = Account__factory.createInterface();
-      const randStuff = crypto.getRandomValues(new Uint8Array(32));
-      const calldata = ai.encodeFunctionData("sign", [randStuff]);
-      console.log('calldata is', calldata);
-      console.log('calldata decoded is', ai.decodeFunctionData('sign', calldata));
+      if( await this.usernameManager.checkUsername(true) ) {
+        this.testStatus.innerText = 'Fetching Credentials';
 
-      const challenge = toBeArray(sha256(calldata));
-      const hashedUsername = await this.usernameManager.hashedUsername();
-      const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
-      const binaryCreds = credentials.map((_) => toBeArray(_));
-      const authed = await credentialGet(binaryCreds, challenge);
+        const provider = this.readonlyContract.runner!.provider!;
+        const feeData = await provider.getFeeData();
+        const network = await provider.getNetwork();
+        const chainId = network.chainId;
 
-      console.log('ROC', await this.readonlyContract.getAddress());
-      const resp = await this.readonlyContract.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
-      const respDecoded = ai.decodeFunctionResult('sign', resp);
-      console.log(respDecoded);
-      this.testStatus.innerText = `${respDecoded}`;
+        // Create random input and encode `.sign` call
+        const ai = Account__factory.createInterface();
+        const randStuff = crypto.getRandomValues(new Uint8Array(32));
+        const calldata = ai.encodeFunctionData("sign", [randStuff]);
+        ai.encodeFunctionData('signEIP155', [{
+          nonce: 13,
+          chainId: network.chainId,
+          gasLimit: 1000000,
+          gasPrice: feeData.gasPrice,
+          // TODO: data
+          // TODO: to
+          value: 0
+        } as EIP155Signer.EthTxStruct]);
+
+        // Construct personalized challenge hash of calldata etc.
+        const accountIdHex = (await this.readonlyContract.getAddress()).slice(2);
+        const saltHex = toBeHex(toBigInt(await this.usernameManager.salt()),32);
+        const personalization = sha256('0x' + toBeHex(chainId!, 32).slice(2) + accountIdHex + saltHex.slice(2));
+        const personalizedHash = sha256(personalization + sha256(calldata).slice(2));
+
+        // Perform WebAuthN signing of challenge
+        const challenge = toBeArray(personalizedHash);
+        const hashedUsername = await this.usernameManager.hashedUsername();
+        const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
+        const binaryCreds = credentials.map((_) => toBeArray(_));
+        const authed = await credentialGet(binaryCreds, challenge);
+
+        // Perform proxied view call with WebAuthN
+        const resp = await this.readonlyContract.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
+        const respDecoded = ai.decodeFunctionResult('sign', resp);
+        console.log(respDecoded);
+        this.testStatus.innerText = `${respDecoded}`;
+      }
     }
     catch( e:any ) {
       this.testStatus.innerText = `${e}`;

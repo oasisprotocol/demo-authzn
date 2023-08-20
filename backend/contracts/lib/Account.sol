@@ -3,6 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {SignatureRSV, EthereumUtils} from "@oasisprotocol/sapphire-contracts/contracts/EthereumUtils.sol";
+import {EIP155Signer} from "@oasisprotocol/sapphire-contracts/contracts/EIP155Signer.sol";
 import {CloneFactory} from "./CloneFactory.sol";
 
 contract AccountFactory is CloneFactory {
@@ -67,6 +68,14 @@ contract Account {
         onlyByController
     {
         _controllers[who] = status;
+    }
+
+    function signEIP155 (EIP155Signer.EthTx calldata txToSign)
+        public view
+        onlyByController
+        returns (bytes memory)
+    {
+        return EIP155Signer.sign(keypairAddress, keypairSecret, txToSign);
     }
 
     function sign (bytes32 digest)
