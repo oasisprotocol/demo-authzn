@@ -13,5 +13,5 @@ task("deploy", "Deploy contracts necessary for the frontend")
 
         const chainId = (await contract.runner!.provider!.getNetwork()).chainId;
         console.log(`VITE_WEBAUTH_ADDR=${await contract.getAddress()}`);
-        console.log(`VITE_CHAIN_ID=${chainId}`);
+        console.log(`VITE_SAPPHIRE_CHAIN_ID=0x${Number(chainId).toString(16)}`);
     });
