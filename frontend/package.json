@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "staging": "tsc && vite build --mode staging"
   },
   "dependencies": {
     "@metamask/detect-provider": "^2.0.0",

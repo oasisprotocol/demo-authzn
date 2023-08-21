@@ -6,7 +6,6 @@ import { pbkdf2Sync } from "pbkdf2"
 import { EthProviders } from './ctx.ts'
 import { credentialCreate, credentialGet } from './webauthn.ts';
 import { Account__factory } from "demo-authzn-backend/typechain-types/index.ts";
-import { EIP155Signer } from "demo-authzn-backend/typechain-types/contracts/lib/Account.sol/Account.ts";
 
 // ------------------------------------------------------------------
 
@@ -369,7 +368,6 @@ class WebAuthNManager
         this.testStatus.innerText = 'Fetching Credentials';
 
         const provider = this.readonlyContract.runner!.provider!;
-        const feeData = await provider.getFeeData();
         const network = await provider.getNetwork();
         const chainId = network.chainId;
 
@@ -377,15 +375,6 @@ class WebAuthNManager
         const ai = Account__factory.createInterface();
         const randStuff = crypto.getRandomValues(new Uint8Array(32));
         const calldata = ai.encodeFunctionData("sign", [randStuff]);
-        ai.encodeFunctionData('signEIP155', [{
-          nonce: 13,
-          chainId: network.chainId,
-          gasLimit: 1000000,
-          gasPrice: feeData.gasPrice,
-          // TODO: data
-          // TODO: to
-          value: 0
-        } as EIP155Signer.EthTxStruct]);
 
         // Construct personalized challenge hash of calldata etc.
         const accountIdHex = (await this.readonlyContract.getAddress()).slice(2);

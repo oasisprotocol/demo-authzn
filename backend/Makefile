@@ -19,6 +19,10 @@ deploy: deploy-local
 deploy-local: compile
 	pnpm hardhat --network sapphire-localnet deploy | tee ../frontend/.env.local
 
+.PHONY: deploy-staging
+deploy-staging: compile
+	pnpm hardhat --network sapphire-testnet deploy | tee ../frontend/.env.staging
+
 .PHONY: test
 test: test-local
 

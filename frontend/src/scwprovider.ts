@@ -82,7 +82,7 @@ export class WebAuthSigner extends AbstractSigner
         return this.#config.scwGasPayer;
     }
 
-    connect(provider: Provider): WebAuthSigner {
+    connect(_provider: null | Provider): WebAuthSigner {
         assert(false, "Cannot re-connect existing WebAuthSigner", "UNSUPPORTED_OPERATION", {operation: "connect"});
     }
 
@@ -97,15 +97,14 @@ export class WebAuthSigner extends AbstractSigner
         const accountIdHex = config.webauthAddress.slice(2);
         const saltHex = toBeHex(config.salt, 32);
         const personalization = sha256('0x' + toBeHex(config.chainId, 32).slice(2) + accountIdHex + saltHex.slice(2));
-        const personalizedHash = sha256(personalization + sha256(calldata).slice(2));
+        const challenge = toBeArray(sha256(personalization + sha256(calldata).slice(2)));
 
-        // Perform WebAuthN signing of view call calldata challenge
-        const challenge = toBeArray(personalizedHash);
+        // Ask WebAuthN to sign challenge
         const credentials = await config.webauth.credentialIdsByUsername(config.usernameHashed);
         const binaryCreds = credentials.map((_) => toBeArray(_));
         const authed = await credentialGet(binaryCreds, challenge);
 
-        // Perform proxied view call to sign(digest) and decode result into ethers signature
+        // Proxied view-call to sign(digest), then decode result into ethers signature
         const resp = await config.webauth.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
         const respDecoded = ai.decodeFunctionResult('sign', resp);
         return Signature.from({
