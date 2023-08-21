@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {SECP256R1, Point256} from "../SECP256R1.sol";
+import {SECP256R1, Point256} from "../lib/SECP256R1.sol";
 
 contract TestP256R1 {
     function add (uint256 x1, uint256 y1, uint256 x2, uint256 y2)

@@ -144,6 +144,13 @@ function decodeAttestationObject (aob:ArrayBufferLike)
     return decodeAuthenticatorData(ad);
 }
 
+function arrayBufferToBase64(buffer:Uint8Array) {
+    var binary = '';
+    var bytes = [].slice.call(buffer);
+    bytes.forEach((b) => binary += String.fromCharCode(b));
+    return window.btoa(binary);
+};
+
 export async function credentialCreate (rp: PublicKeyCredentialRpEntity, user:PublicKeyCredentialUserEntity, challenge:Uint8Array)
 {
     let pkc = await navigator.credentials.create({
@@ -164,13 +171,40 @@ export async function credentialCreate (rp: PublicKeyCredentialRpEntity, user:Pu
         throw new Error('No PublicKeyCredential returned!');
     }
 
+    const challengeB64 = arrayBufferToBase64(challenge);
     const resp = pkc.response as AuthenticatorAttestationResponse;
-    console.log(pkc);
+    const cdj = new TextDecoder('utf-8').decode(resp.clientDataJSON);
+    console.log(pkc, cdj, challengeB64);
     return {
         id: new Uint8Array(pkc.rawId),
-        cd: new TextDecoder('utf-8').decode(resp.clientDataJSON),
+        cd: cdj,
         ad: decodeAttestationObject(resp.attestationObject)
     };
+}
+
+
+/**
+ * Object to typed token array
+ */
+function object2makejson (o:{ [id: string]: string | boolean })
+{
+    return Object.entries(o).map(([k, v]) => {
+        if( typeof v == "boolean" ) {
+            return {
+                t: 1,
+                k: k,
+                v: v ? "true" : "false"
+            };
+        }
+        if( typeof v == "string" ) {
+            return {
+                t: 0,
+                k: k,
+                v: v
+            };
+        }
+        throw new Error(`Incompatible value type! Key:${k} Value:${v}`);
+    });
 }
 
 var asn1_sig_schema = new asn1js.Sequence({
@@ -186,9 +220,11 @@ var asn1_sig_schema = new asn1js.Sequence({
   });
 
 
-export async function credentialGet(credentials:Uint8Array[])
+export async function credentialGet(credentials:Uint8Array[], challenge?: Uint8Array)
 {
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    if( ! challenge ) {
+        challenge = crypto.getRandomValues(new Uint8Array(32));
+    }
 
     const authed = await navigator.credentials.get({
         publicKey: {
@@ -199,19 +235,25 @@ export async function credentialGet(credentials:Uint8Array[])
 
     const resp = authed.response as AuthenticatorAssertionResponse;
 
-    const blah = asn1js.verifySchema(resp.signature, asn1_sig_schema);
-    if( ! blah.verified ) {
+    const decodedSignature = asn1js.verifySchema(resp.signature, asn1_sig_schema);
+    if( ! decodedSignature.verified ) {
         throw new Error("Unable to decode ASN.1 signature!");
     }
 
-    const result: {r:asn1js.Integer, s:asn1js.Integer} = blah.result as any;
+    const result: {r:asn1js.Integer, s:asn1js.Integer} = decodedSignature.result as any;
     const r = result.r.toBigInt();
     const s = result.s.toBigInt();
+
+    const clientData = JSON.parse(new TextDecoder().decode(resp.clientDataJSON));
+    console.log(clientData);
     return {
-        in_credentialIdHashed: keccak256(new Uint8Array(authed.rawId)),
-        in_authenticatorData: new Uint8Array(resp.authenticatorData),
-        in_clientDataJSON: new Uint8Array(resp.clientDataJSON),
-        in_sigR: r,
-        in_sigS: s
+        credentialIdHashed: keccak256(new Uint8Array(authed.rawId)),
+        challenge: challenge,
+        resp: {
+            authenticatorData: new Uint8Array(resp.authenticatorData),
+            clientDataTokens: object2makejson(clientData),
+            sigR: r,
+            sigS: s
+        }
     };
 }

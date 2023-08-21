@@ -3,7 +3,10 @@
 pragma solidity ^0.8.0;
 
 import {Sapphire} from "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
-import {Point256, SECP256R1} from "./SECP256R1.sol";
+import {Point256, SECP256R1} from "./lib/SECP256R1.sol";
+import {MakeJSON} from "./lib/MakeJSON.sol";
+import {Base64URL} from "./lib/Base64URL.sol";
+import {Account,AccountFactory} from "./lib/Account.sol";
 
 struct UserCredential {
     Point256 pubkey;
@@ -21,6 +24,14 @@ struct CosePublicKey {
 
 struct User {
     bytes32 username;
+    Account account;
+}
+
+struct AuthenticatorResponse {
+    bytes authenticatorData;
+    MakeJSON.KeyValue[] clientDataTokens;
+    uint256 sigR;
+    uint256 sigS;
 }
 
 contract WebAuthNExampleStorage {
@@ -31,14 +42,30 @@ contract WebAuthNExampleStorage {
     mapping(bytes32 => UserCredential) internal credentialsByHashedCredentialId;
 
     bytes32 internal challengeSecret;
+
+    bytes32 public salt;
 }
 
 contract WebAuthNExample is WebAuthNExampleStorage {
-    bytes32 public salt;
+    bytes32 constant private CHALLENGE_KEY_HASH = keccak256("challenge");
+    bytes32 constant private TYPE_KEY_HASH = keccak256("type");
+    bytes32 constant private WEBAUTHN_GET_HASH = keccak256("webauthn.get");
+
+    AccountFactory private accountFactory;
 
     constructor () {
         challengeSecret = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
+
         salt = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
+
+        accountFactory = new AccountFactory();
+    }
+
+    function getUser (bytes32 in_username)
+        public view
+        returns (User memory user)
+    {
+        user = users[in_username];
     }
 
     function userExists (bytes32 in_username)
@@ -50,21 +77,10 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         return user.username != bytes32(0x0);
     }
 
-    /**
-     * Deterministic per-keypair challenge
-     * @param pubkey X & Y coordinates of EC point
-     */
-    function challenge (uint256[2] memory pubkey)
-        public view
-        returns (bytes32)
-    {
-        return keccak256(abi.encodePacked(challengeSecret, pubkey));
-    }
-
     function registerECES256P256 (
         bytes32 in_username,
-        bytes memory in_credentialId,
-        CosePublicKey memory in_pubkey
+        bytes calldata in_credentialId,
+        CosePublicKey calldata in_pubkey
     )
         external
     {
@@ -79,6 +95,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
         User storage user = users[in_username];
         user.username = in_username;
+        user.account = accountFactory.clone(address(this));
 
         bytes32 hashedCredentialId = keccak256(in_credentialId);
         credentialsByHashedCredentialId[hashedCredentialId] = UserCredential({
@@ -136,22 +153,92 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         require( user.username == credential.username, "getCredentialAndUser" );
     }
 
+    /**
+     * Verify the clientDataJSON structure
+     * @custom:see https://developer.mozilla.org/en-US/docs/Web/API/AuthenticatorResponse/clientDataJSON
+     * @param in_challenge Authenticator challenge (32 bytes)
+     * @param in_clientDataTokens JSON data split into key/value tokens (see: MakeJSON.sol)
+     */
+    function verifyClientDataTokens (
+        bytes32 in_challenge,
+        MakeJSON.KeyValue[] calldata in_clientDataTokens
+    )
+        internal pure
+        returns (bool)
+    {
+        // Verify the raw challenge matches what's in the JSON
+        string memory challengeBase64 = Base64URL.encode(abi.encodePacked(in_challenge), false);
+        bytes32 challengeBase64Hashed = keccak256(bytes(challengeBase64));
+
+        bool isTypeOk = false;      // type == webauthn.get
+        bool isChallengeOk = false;
+
+        for( uint i = 0; i < in_clientDataTokens.length; i++ )
+        {
+            MakeJSON.KeyValue calldata item = in_clientDataTokens[i];
+            bytes32 keyHash = keccak256(bytes(item.k));
+            bytes32 valueHash = keccak256(bytes(item.v));
+
+            if( keyHash == CHALLENGE_KEY_HASH )
+            {
+                isChallengeOk = challengeBase64Hashed == valueHash;
+            }
+            else if( keyHash == TYPE_KEY_HASH ) {
+                isTypeOk = valueHash == WEBAUTHN_GET_HASH;
+            }
+
+            // Other keys are ignored
+        }
+
+        return isChallengeOk && isTypeOk;
+    }
+
     function verifyECES256P256 (
         bytes32 in_credentialIdHashed,
-        bytes memory in_authenticatorData,
-        bytes memory in_clientDataJSON,
-        uint256 in_sigR,
-        uint256 in_sigS
+        bytes32 in_challenge,
+        AuthenticatorResponse calldata in_resp
     )
         public view
-        returns (bytes32)
+        returns (User memory user)
     {
-        (User memory user, UserCredential memory credential) = getCredentialAndUser(in_credentialIdHashed);
+        UserCredential memory credential;
 
-        bytes32 digest = sha256(abi.encodePacked(in_authenticatorData, sha256(in_clientDataJSON)));
+        (user, credential) = getCredentialAndUser(in_credentialIdHashed);
 
-        require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_sigR, in_sigS), "verifyECES256P256" );
+        require( verifyClientDataTokens(in_challenge, in_resp.clientDataTokens), "verifyClientDataTokens" );
 
-        return user.username;
+        string memory clientDataJSON = MakeJSON.from(in_resp.clientDataTokens);
+
+        bytes32 digest = sha256(abi.encodePacked(in_resp.authenticatorData, sha256(abi.encodePacked(clientDataJSON))));
+
+        require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_resp.sigR, in_resp.sigS), "verifyECES256P256" );
+
+        return user;
+    }
+
+    function proxyViewECES256P256(
+        bytes32 in_credentialIdHashed,
+        AuthenticatorResponse calldata in_resp,
+        bytes memory in_data
+    )
+        public view
+        returns (bytes memory out_data)
+    {
+        bytes32 personalization = sha256(abi.encodePacked(block.chainid, address(this), salt));
+
+        bytes32 challenge = sha256(abi.encodePacked(personalization, sha256(in_data)));
+
+        User memory user = this.verifyECES256P256(in_credentialIdHashed, challenge, in_resp);
+
+        in_data = abi.encodeWithSelector(Account.sign.selector, "");
+
+        bool success;
+
+        (success, out_data) = address(user.account).staticcall(in_data);
+
+        assembly {
+            switch success
+            case 0 { revert(add(out_data,32),mload(out_data)) }
+        }
     }
 }

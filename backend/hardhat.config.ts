@@ -1,9 +1,9 @@
-//import '@oasisprotocol/sapphire-hardhat';
+import '@oasisprotocol/sapphire-hardhat';
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "@nomicfoundation/hardhat-ethers";
 
 import "./tasks/deploy";
-//require('./tasks/deploy');
 
 const TEST_HDWALLET = {
   mnemonic: "test test test test test test test test test test test junk",
