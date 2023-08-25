@@ -126,8 +126,8 @@ describe('SECP256R1', () => {
         }
     }
 
-    it('EcDSA', async () => {
-        for( let i = 0; i < 5; i++ )
+    it('EcDSA (Precompile)', async () => {
+        for( let i = 0; i < 10; i++ )
         {
             const msgBytes = getRandomValues(new Uint8Array(32));
             const msg = new BN(msgBytes);
@@ -139,7 +139,8 @@ describe('SECP256R1', () => {
                 y: bn2u256(kp.getPublic().getY())
             };
 
-            const solsig = await c.ecdsa_sign_raw(secret, bn2u256(msg));
+            // Sign using the precompile
+            const solsig = await c.ecdsa_sign_raw_precompile(secret, bn2u256(msg));
 
             // Verify Solidity signature in JS
             const jsressol = secp256r1.verify(msg, new SolSignature(solsig), kp);
@@ -149,9 +150,20 @@ describe('SECP256R1', () => {
             const ressol = await c.ecdsa_verify_raw(pk, bn2u256(msg), solsig.r, solsig.s);
             expect(ressol).eq(true);
 
-            // Verify JS signature in Solidity
+            // Verify JS signature in Solidity (without doing encoding)
             const sigjs = secp256r1.sign(msg, kp);
-            const resjs = await c.ecdsa_verify_raw(pk, bn2u256(msg), bn2u256(sigjs.r), bn2u256(sigjs.s));
+            const sigder = '0x' + sigjs.toDER('hex');
+            const publicCompressed = '0x' + kp.getPublic().encodeCompressed('hex');
+            const resjs1 = await c.ecdsa_verify_raw_precompile_raw(publicCompressed, bn2u256(msg), sigder);
+            expect(resjs1).eq(true);
+
+            // Verify Solidity implementation of encoding matches
+            const encoding = await c.ecdsa_test_encode([pk.x, pk.y], bn2u256(sigjs.r), bn2u256(sigjs.s));
+            expect(publicCompressed).eq(encoding.pkb);
+            expect(sigder).eq(encoding.sig);
+
+            // Verify JS signature in Solidity (while doing encoding)
+            const resjs = await c.ecdsa_verify_raw_precompile([pk.x, pk.y], bn2u256(msg), bn2u256(sigjs.r), bn2u256(sigjs.s));
             expect(resjs).eq(true);
         }
     });
