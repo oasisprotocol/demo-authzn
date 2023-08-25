@@ -3,13 +3,13 @@
 pragma solidity ^0.8.0;
 
 import {Sapphire} from "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
-import {Point256, SECP256R1} from "./lib/SECP256R1.sol";
+import {SECP256R1Precompile} from "./lib/SECP256R1Precompile.sol";
 import {MakeJSON} from "./lib/MakeJSON.sol";
 import {Base64URL} from "./lib/Base64URL.sol";
 import {Account,AccountFactory} from "./lib/Account.sol";
 
 struct UserCredential {
-    Point256 pubkey;
+    uint256[2] pubkey;
     bytes credentialId;
     bytes32 username;
 }
@@ -91,7 +91,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         require( in_pubkey.kty == 2, "registerECES256P256: invalid kty" );  // Elliptic Curve format
         require( in_pubkey.alg == -7, "registerECES256P256: invalid alg" ); // ES256 algorithm
         require( in_pubkey.crv == 1, "registerECES256P256: invalid crv" );  // P-256 curve
-        require( SECP256R1.isOnCurve(in_pubkey.x, in_pubkey.y), "registerECES256P256: invalid point" );   // Must be valid curve point
+        require( SECP256R1Precompile.isOnCurve(in_pubkey.x, in_pubkey.y), "registerECES256P256: invalid point" );   // Must be valid curve point
 
         User storage user = users[in_username];
         user.username = in_username;
@@ -99,7 +99,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
         bytes32 hashedCredentialId = keccak256(in_credentialId);
         credentialsByHashedCredentialId[hashedCredentialId] = UserCredential({
-            pubkey: Point256(in_pubkey.x, in_pubkey.y),
+            pubkey: [in_pubkey.x, in_pubkey.y],
             credentialId: in_credentialId,
             username: in_username
         });
@@ -211,7 +211,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
 
         bytes32 digest = sha256(abi.encodePacked(in_resp.authenticatorData, sha256(abi.encodePacked(clientDataJSON))));
 
-        require( SECP256R1.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_resp.sigR, in_resp.sigS), "verifyECES256P256" );
+        require( SECP256R1Precompile.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_resp.sigR, in_resp.sigS), "verifyECES256P256" );
 
         return user;
     }

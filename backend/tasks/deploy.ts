@@ -3,11 +3,11 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 task("deploy", "Deploy contracts necessary for the frontend")
     .setAction(async (_, hre:HardhatRuntimeEnvironment) => {
-        const curveFactory = await hre.ethers.getContractFactory("SECP256R1");
+        const curveFactory = await hre.ethers.getContractFactory("SECP256R1Precompile");
         const curveLibrary = await curveFactory.deploy();
         await curveLibrary.waitForDeployment();
 
-        const contractFactory = await hre.ethers.getContractFactory("WebAuthNExample", {libraries: {SECP256R1: await curveLibrary.getAddress()}});
+        const contractFactory = await hre.ethers.getContractFactory("WebAuthNExample", {libraries: {SECP256R1Precompile: await curveLibrary.getAddress()}});
         const contract = await contractFactory.deploy();
         await contract.waitForDeployment();
 
