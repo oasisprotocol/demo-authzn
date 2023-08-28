@@ -16,21 +16,24 @@ struct CosePublicKey {
 
 struct AttestedCredentialData {
     bytes16 aaguid;
-    uint16 credentialIdLength;
     bytes credentialId;
     bytes credentialPublicKey;
 }
 
+struct AuthenticatorDataFlags {
+    bool UP;
+    bool UV;
+    bool BE;
+    bool BS;
+    bool AT;
+    bool ED;
+}
+
 struct AuthenticatorData {
     bytes32 rpIdHash;
-    bool flag_UP;   // bit 0, User Presence
-    bool flag_UV;   // bit 2, User Verification
-    bool flag_BE;   // bit 3, Backup Eligibility
-    bool flag_BS;   // bit 4, Backup State
-    bool flag_AT;   // bit 6, Attested Credential Data
-    bool flag_ED;   // bi6 7, Extension Data
+    AuthenticatorDataFlags flags;
     uint32 signCount;
-    AttestedCredentialData acd;
+    AttestedCredentialData attestedCredentialData;
 }
 
 /**
@@ -57,19 +60,31 @@ function parseAuthenticatorData (bytes calldata data)
     ad.rpIdHash = bytes32(data[:32]);
 
     uint8 flags = uint8(data[32]);
-    ad.flag_UP = (flags & (1<<0)) != 0;
-    ad.flag_UV = (flags & (1<<2)) != 0;
-    ad.flag_BE = (flags & (1<<3)) != 0;
-    ad.flag_BS = (flags & (1<<4)) != 0;
-    ad.flag_AT = (flags & (1<<6)) != 0;
-    ad.flag_ED = (flags & (1<<7)) != 0;
+    ad.flags.UP = (flags & (1<<0)) != 0;
+    ad.flags.UV = (flags & (1<<2)) != 0;
+    ad.flags.BE = (flags & (1<<3)) != 0;
+    ad.flags.BS = (flags & (1<<4)) != 0;
+    ad.flags.AT = (flags & (1<<6)) != 0;
+    ad.flags.ED = (flags & (1<<7)) != 0;
 
     ad.signCount = uint32(bytes4(data[33:37]));
 
-    if( ad.flag_AT )
+    if( ad.flags.AT )
     {
-        ad.acd.aaguid = bytes16(data[37:69]);
-        ad.acd.credentialIdLength = uint16(bytes2(data[69:71]));
+        AttestedCredentialData memory at = ad.attestedCredentialData;
+
+        at.aaguid = bytes16(data[37:53]);
+
+        uint credentialIdLength = uint16(bytes2(data[53:55]));
+        at.credentialId = data[55:55+credentialIdLength];
+
+        at.credentialPublicKey = data[55+credentialIdLength:];
+
+        // TODO: parse `credentialPublicKey` in COSE format with CBOR encoding
+
+        // We are unable to parse both AT & ED content
+        // As credentialPublicKey is expected to consist of the rest of the buffer
+        require( ad.flags.ED == false );
     }
 }
 
@@ -85,7 +100,7 @@ library WebAuthN {
     bytes32 constant private TYPE_KEY_HASH = keccak256("type");
     bytes32 constant private WEBAUTHN_GET_HASH = keccak256("webauthn.get");
 
-    function verifyPubkey (CosePublicKey calldata in_pubkey)
+    function verifyPubkey (CosePublicKey memory in_pubkey)
         internal pure
         returns (bool)
     {

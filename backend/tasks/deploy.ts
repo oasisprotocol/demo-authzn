@@ -1,3 +1,4 @@
+import { parseEther } from "ethers";
 import { task } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
@@ -8,7 +9,7 @@ task("deploy", "Deploy contracts necessary for the frontend")
         await curveLibrary.waitForDeployment();
 
         const contractFactory = await hre.ethers.getContractFactory("WebAuthNExample", {libraries: {SECP256R1Precompile: await curveLibrary.getAddress()}});
-        const contract = await contractFactory.deploy();
+        const contract = await contractFactory.deploy({value: parseEther('1.0')});
         await contract.waitForDeployment();
 
         const chainId = (await contract.runner!.provider!.getNetwork()).chainId;

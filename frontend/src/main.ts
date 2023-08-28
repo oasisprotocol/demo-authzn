@@ -1,10 +1,10 @@
 import { subscribe } from "exome";
-import { sha256, toBeArray, toBeHex, toBigInt } from "ethers";
+import { ZeroHash, sha256, toBeArray, toBeHex, toBigInt } from "ethers";
 import { WebAuthNExample__factory } from "demo-authzn-backend";
 import { pbkdf2Sync } from "pbkdf2"
 
 import { EthProviders } from './ctx.ts'
-import { credentialCreate, credentialGet } from './webauthn.ts';
+import { credentialCreate, credentialGet } from "demo-authzn-backend/src/webauthn.ts";
 import { Account__factory } from "demo-authzn-backend/typechain-types/index.ts";
 
 // ------------------------------------------------------------------
@@ -240,9 +240,6 @@ class WebAuthNManager
   registerButton = document.querySelector<HTMLButtonElement>('#webauthn-register-button')!;
   registerStatus = document.querySelector<HTMLSpanElement>('#webauthn-register-status')!;
   registerSpinner = document.querySelector<HTMLImageElement>('#webauthn-register-spinner')!;
-  loginButton = document.querySelector<HTMLButtonElement>('#webauthn-login-button')!;
-  loginStatus = document.querySelector<HTMLSpanElement>('#webauthn-login-status')!;
-  loginSpinner = document.querySelector<HTMLImageElement>('#webauthn-login-spinner')!;
 
   testButton = document.querySelector<HTMLButtonElement>('#webauthn-test-button')!;
   testStatus = document.querySelector<HTMLSpanElement>('#webauthn-test-status')!;
@@ -272,13 +269,11 @@ class WebAuthNManager
   async _onProvidersUpdate () {
     const disabled = ! this._providers.connected;
     setDisabled(this.registerButton, disabled);
-    setDisabled(this.loginButton, disabled);
     setDisabled(this.testButton, disabled);
   }
 
   async attach () {
     this.registerButton.addEventListener('click', this._onRegister.bind(this));
-    this.loginButton.addEventListener('click', this._onLogin.bind(this));
     this.testButton.addEventListener('click', this._onTest.bind(this));
     await this.usernameManager.attach();
   }
@@ -313,8 +308,21 @@ class WebAuthNManager
         }
 
         try {
-          const tx = await this.signingContract.registerECES256P256(hashedUsername, cred.id, cred.ad.at!.credentialPublicKey!)
-          this.registerStatus.innerText = `Registering (tx: ${tx.hash})`;
+          const provider = this.readonlyContract.runner!.provider!;
+          const gasPrice = (await provider.getFeeData())!.gasPrice!;
+          const nonce = await provider.getTransactionCount(await this.readonlyContract.gaspayingAddress());
+          const signedTx = await this.readonlyContract.gasless_registerECES256P256(
+            {
+              hashedUsername: hashedUsername,
+              credentialId: cred.id,
+              pubkey: cred.ad.attestedCredentialData!.credentialPublicKey!,
+              optionalPassword: ZeroHash
+            },
+            nonce, gasPrice);
+          const txHash = await this._providers.up!.send('eth_sendRawTransaction', [signedTx]) as string;
+          this.registerStatus.innerText = `Registering (tx: ${txHash})`;
+          await this._providers.up?.waitForTransaction(txHash);
+          const tx = (await this._providers.swp?.getTransaction(txHash))!;
           const receipt = await tx.wait();
           this.registerStatus.innerText = `Registered (block: ${receipt!.blockNumber}, tx: ${tx.hash}, gas: ${receipt!.gasUsed})`;
         }
@@ -331,33 +339,6 @@ class WebAuthNManager
     }
     finally {
       setVisibility(this.registerSpinner, false);
-    }
-  }
-
-  async _onLogin () {
-    try {
-      this.loginSpinner.style.visibility = 'visible';
-      if( await this.usernameManager.checkUsername(true) )
-      {
-        this.loginStatus.innerText = 'Fetching Credentials';
-        const hashedUsername = await this.usernameManager.hashedUsername();
-        const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
-        const binaryCreds = credentials.map((_) => toBeArray(_));
-        const authed = await credentialGet(binaryCreds);
-
-        // Ask contract to verify our WebAuthN attestation
-        const resp = await this.readonlyContract.verifyECES256P256(
-          authed.credentialIdHashed,
-          authed.challenge,
-          authed.resp);
-
-        // Display login status, why is Uint8Array comparison fkd in JS?
-        const success = 0 == indexedDB.cmp(toBeArray(resp.username), hashedUsername);
-        this.loginStatus.innerText = success ? `Success (${resp.account})` : 'Failure!';
-      }
-    }
-    finally {
-      this.loginSpinner.style.visibility = 'hidden';
     }
   }
 

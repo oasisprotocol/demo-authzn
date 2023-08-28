@@ -63,21 +63,23 @@ function COSEPublicKey_decode (buf:ArrayBufferLike) : COSEPublicKey
 }
 
 interface AttestedCredentialData {
-    aaguid: Uint8Array|undefined;
-    credentialId: Uint8Array|undefined;
-    credentialPublicKey: COSEPublicKey|undefined;
+    aaguid: Uint8Array;
+    credentialId: Uint8Array;
+    credentialPublicKey: COSEPublicKey;
 }
 
 interface AuthenticatorData {
     rpIdHash: Uint8Array;
     flags: {
-        up: boolean;
-        uv: boolean;
-        at: boolean;
-        ed: boolean;
+        UP: boolean;
+        UV: boolean;
+        BE: boolean;
+        BS: boolean;
+        AT: boolean;
+        ED: boolean;
     };
     signCount: number;
-    at?: AttestedCredentialData;
+    attestedCredentialData?: AttestedCredentialData;
 }
 
 interface AttestationObject {
@@ -97,25 +99,27 @@ export function decodeAuthenticatorData (ad: Uint8Array) {
     const authDataDict:AuthenticatorData = {
         rpIdHash: ad.slice(0, 32),          // 32 bytes, SHA256(rp.id), e.g. SHA256(b'localhost')
         flags: {                            //  1 byte
-            up: (flags & (1<<0)) != 0,      // Bit 0: User Present (UP) result
+            UP: (flags & (1<<0)) != 0,      // Bit 0: User Present (UP) result
                                             // Bit 1: Reserved for future use (RFU1)
-            uv: (flags & (1<<2)) != 0,      // Bit 2: User Verified (UV) result
-                                            // Bits 3-5: Reserved for future use (RFU2)
-            at: (flags & (1<<6)) != 0,      // Bit 6: Attested credential data included (AT)
-            ed: (flags & (1<<7)) != 0       // Bit 7: Extension data included (ED).
+            UV: (flags & (1<<2)) != 0,      // Bit 2: User Verified (UV) result
+            BE: (flags & (1<<3)) != 0,      // Bit 3: Backup Eligibility (BE)
+            BS: (flags & (1<<4)) != 0,      // Bit 3: Backup State (BS)
+                                            // Bit 5: Reserved for future use (RFU2)
+            AT: (flags & (1<<6)) != 0,      // Bit 6: Attested credential data included (AT)
+            ED: (flags & (1<<7)) != 0       // Bit 7: Extension data included (ED).
         },
         signCount: toU32(ad.slice(33, 37))  //  4 bytes
     }
 
-    if( authDataDict.flags.ed ) {
+    if( authDataDict.flags.ED ) {
         throw new Error('Extension Data not supported!');
     }
 
     // https://www.w3.org/TR/webauthn-2/#sctn-attested-credential-data
-    if( authDataDict.flags.at )
+    if( authDataDict.flags.AT )
     {
         const credentialIdLength = toU16(ad.slice(53, 55));         // 2 bytes
-        authDataDict.at = {
+        authDataDict.attestedCredentialData = {
             aaguid: ad.slice(37, 53),                  // 16 bytes
             credentialId: ad.slice(55, 55+credentialIdLength),
             // vanillacbor.decodeOnlyFirst(buffer).byteLength;
@@ -140,6 +144,8 @@ function decodeAttestationObject (aob:ArrayBufferLike)
     // - https://www.iana.org/assignments/webauthn/webauthn.xhtml#webauthn-attestation-statement-format-ids
 
     const ad = attestationObject.authData;
+
+    console.log(ad.toString());
 
     return decodeAuthenticatorData(ad);
 }

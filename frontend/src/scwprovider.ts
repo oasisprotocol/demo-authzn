@@ -61,9 +61,9 @@ export class WebAuthSigner extends AbstractSigner
         const chainId = (await provider.getNetwork()).chainId;
         const salt = await webauth.salt();
         const usernameHashed = pbkdf2Sync(username, salt, 100_000, 32, 'sha256');
-        const scwUser = await webauth.getUser(usernameHashed);
+        const scwUser = await webauth.getAccount(usernameHashed);
         const scwAccount = Account__factory.connect(scwUser.account, wrappedProvider);
-        const scwGasPayer = await scwAccount.keypairAddress();
+        const scwGasPayer = scwUser.keypairAddress;
         const config = {
             wrappedProvider,
             webauth,
