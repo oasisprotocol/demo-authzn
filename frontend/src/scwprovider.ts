@@ -22,12 +22,12 @@ import {
 } from "ethers";
 import { pbkdf2Sync } from "pbkdf2"
 import sapphire from "@oasisprotocol/sapphire-paratime"
-import { credentialGet } from './webauthn.ts';
 import {
     WebAuthNExample,
     WebAuthNExample__factory,
     Account,
-    Account__factory
+    Account__factory,
+    webauthn
  } from "demo-authzn-backend";
 
 interface WebAuthConfig {
@@ -102,7 +102,7 @@ export class WebAuthSigner extends AbstractSigner
         // Ask WebAuthN to sign challenge
         const credentials = await config.webauth.credentialIdsByUsername(config.usernameHashed);
         const binaryCreds = credentials.map((_) => toBeArray(_));
-        const authed = await credentialGet(binaryCreds, challenge);
+        const authed = await webauthn.credentialGet(binaryCreds, challenge);
 
         // Proxied view-call to sign(digest), then decode result into ethers signature
         const resp = await config.webauth.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
