@@ -3,10 +3,12 @@
 pragma solidity ^0.8.0;
 
 import {Sapphire} from "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
-import {SECP256R1Precompile} from "./lib/SECP256R1Precompile.sol";
-import {MakeJSON} from "./lib/MakeJSON.sol";
-import {Base64URL} from "./lib/Base64URL.sol";
+import {EthereumUtils} from "@oasisprotocol/sapphire-contracts/contracts/EthereumUtils.sol";
+import {EIP155Signer} from "@oasisprotocol/sapphire-contracts/contracts/EIP155Signer.sol";
+
 import {Account,AccountFactory} from "./lib/Account.sol";
+import {WebAuthN,CosePublicKey,AuthenticatorResponse} from "./lib/WebAuthN.sol";
+
 
 struct UserCredential {
     uint256[2] pubkey;
@@ -14,59 +16,64 @@ struct UserCredential {
     bytes32 username;
 }
 
-struct CosePublicKey {
-    uint8 kty;
-    int8 alg;
-    uint8 crv;
-    uint256 x;
-    uint256 y;
-}
 
 struct User {
     bytes32 username;
+    bytes32 password;
     Account account;
 }
 
-struct AuthenticatorResponse {
-    bytes authenticatorData;
-    MakeJSON.KeyValue[] clientDataTokens;
-    uint256 sigR;
-    uint256 sigS;
-}
 
 contract WebAuthNExampleStorage {
+
     mapping(bytes32 => User) internal users;
 
     mapping(bytes32 => bytes32[]) internal usernameToHashedCredentialIdList;
 
     mapping(bytes32 => UserCredential) internal credentialsByHashedCredentialId;
 
-    bytes32 internal challengeSecret;
-
     bytes32 public salt;
+
+    bytes32 public encryptionSecret;
+
+    AccountFactory internal accountFactory;
+
+    address public gaspayingAddress;
+
+    bytes32 internal gaspayingSecret;
 }
 
-contract WebAuthNExample is WebAuthNExampleStorage {
-    bytes32 constant private CHALLENGE_KEY_HASH = keccak256("challenge");
-    bytes32 constant private TYPE_KEY_HASH = keccak256("type");
-    bytes32 constant private WEBAUTHN_GET_HASH = keccak256("webauthn.get");
 
-    AccountFactory private accountFactory;
-
-    constructor () {
-        challengeSecret = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
-
+contract WebAuthNExample is WebAuthNExampleStorage
+{
+    constructor ()
+        payable
+    {
         salt = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
 
+        encryptionSecret = bytes32(Sapphire.randomBytes(32, abi.encodePacked(address(this))));
+
+        (gaspayingAddress, gaspayingSecret) = EthereumUtils.generateKeypair();
+
         accountFactory = new AccountFactory();
+
+        if( msg.value > 0 ) {
+            payable(gaspayingAddress).transfer(msg.value);
+        }
     }
 
-    function getUser (bytes32 in_username)
-        public view
-        returns (User memory user)
+
+    function getAccount (bytes32 in_username)
+        external view
+        returns (Account account, address keypairAddress)
     {
-        user = users[in_username];
+        User storage user = users[in_username];
+
+        account = user.account;
+
+        keypairAddress = account.keypairAddress();
     }
+
 
     function userExists (bytes32 in_username)
         public view
@@ -77,53 +84,128 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         return user.username != bytes32(0x0);
     }
 
-    function registerECES256P256 (
-        bytes32 in_username,
-        bytes calldata in_credentialId,
-        CosePublicKey calldata in_pubkey
+    /**
+     *
+     * @param in_hashedUsername PBKDF2 hashed username
+     * @param in_credentialId Raw credentialId provided by WebAuthN compatible authenticator
+     * @param in_pubkey Public key extracted from authenticatorData
+     */
+    function internal_registerCredential(
+        bytes32 in_hashedUsername,
+        bytes memory in_credentialId,
+        CosePublicKey memory in_pubkey
     )
-        external
+        internal
     {
-        // Don't allow duplicate registrations
-        require( ! userExists(in_username), "registerECES256P256: user exists" );
-
-        // Validate form of public key provided upon registration
-        require( in_pubkey.kty == 2, "registerECES256P256: invalid kty" );  // Elliptic Curve format
-        require( in_pubkey.alg == -7, "registerECES256P256: invalid alg" ); // ES256 algorithm
-        require( in_pubkey.crv == 1, "registerECES256P256: invalid crv" );  // P-256 curve
-        require( SECP256R1Precompile.isOnCurve(in_pubkey.x, in_pubkey.y), "registerECES256P256: invalid point" );   // Must be valid curve point
-
-        User storage user = users[in_username];
-        user.username = in_username;
-        user.account = accountFactory.clone(address(this));
+        // Ensure public key validity before registration
+        require( WebAuthN.verifyPubkey(in_pubkey), "WebAuthN.verifyPubkey" );
 
         bytes32 hashedCredentialId = keccak256(in_credentialId);
+
+        // Credential must not previously exist or be associated with a user
+        require(  credentialsByHashedCredentialId[hashedCredentialId].username == bytes32(0) );
+
+        // Add credential to user
         credentialsByHashedCredentialId[hashedCredentialId] = UserCredential({
             pubkey: [in_pubkey.x, in_pubkey.y],
             credentialId: in_credentialId,
-            username: in_username
+            username: in_hashedUsername
         });
 
-        usernameToHashedCredentialIdList[in_username].push(hashedCredentialId);
+        usernameToHashedCredentialIdList[in_hashedUsername].push(hashedCredentialId);
+    }
+
+    function internal_register(bytes32 in_hashedUsername, bytes32 in_optionalPassword)
+        internal
+        returns (User storage user)
+    {
+        user = users[in_hashedUsername];
+        user.username = in_hashedUsername;
+        user.account = accountFactory.clone(address(this));
+        user.password = in_optionalPassword;
+    }
+
+    struct RegisterECES256P256 {
+        bytes32 hashedUsername;
+        bytes credentialId;
+        CosePublicKey pubkey;
+        bytes32 optionalPassword;
+    }
+
+    function encrypted_registerECES256P256 (bytes32 nonce, bytes memory ciphertext)
+        external
+    {
+        bytes memory plaintext = Sapphire.decrypt(encryptionSecret, nonce, ciphertext, abi.encodePacked(address(this)));
+
+        RegisterECES256P256 memory args = abi.decode(plaintext, (RegisterECES256P256));
+
+        // Don't allow duplicate registrations
+        require( ! userExists(args.hashedUsername), "registerECES256P256: user exists" );
+
+        internal_register(args.hashedUsername, args.optionalPassword);
+
+        internal_registerCredential(args.hashedUsername, args.credentialId, args.pubkey);
+    }
+
+    function gasless_registerECES256P256 (
+        RegisterECES256P256 calldata args,
+        uint64 nonce,
+        uint256 gasPrice
+    )
+        external view
+        returns (bytes memory)
+    {
+        require( ! userExists(args.hashedUsername), "gasless_registerECES256P256: user exists" );
+
+        bytes memory plainText = abi.encode(args);
+
+        bytes32 cipherNonce = bytes32(Sapphire.randomBytes(32, abi.encode(
+            args,
+            nonce,
+            gasPrice
+        )));
+
+        bytes memory cipherPersonalization = abi.encodePacked(address(this));
+
+        bytes memory cipherBytes = Sapphire.encrypt(
+            encryptionSecret,
+            cipherNonce,
+            plainText,
+            cipherPersonalization);
+
+        EIP155Signer.EthTx memory gaslessTx = EIP155Signer.EthTx({
+            nonce: nonce,
+            gasPrice: gasPrice,
+            gasLimit: 1000000,
+            to: address(this),
+            value: 0,
+            data: abi.encodeCall(
+                this.encrypted_registerECES256P256,
+                (cipherNonce, cipherBytes)
+            ),
+            chainId: block.chainid
+        });
+
+        return EIP155Signer.sign(gaspayingAddress, gaspayingSecret, gaslessTx);
     }
 
     /**
      * Retrieve a list of credential IDs for a specific user
-     * @param in_username Hashed username
+     * @param in_hashedUsername Hashed username
      */
-    function credentialIdsByUsername(bytes32 in_username)
+    function credentialIdsByUsername(bytes32 in_hashedUsername)
         public view
         returns (bytes[] memory out_credentialIds)
     {
-        require( userExists(in_username), "credentialIdsByUsername" );
+        require( userExists(in_hashedUsername), "credentialIdsByUsername" );
 
-        bytes32[] storage credentialIdHashes = usernameToHashedCredentialIdList[in_username];
+        bytes32[] storage credentialIdHashes = usernameToHashedCredentialIdList[in_hashedUsername];
 
-        uint l = credentialIdHashes.length;
+        uint length = credentialIdHashes.length;
 
-        out_credentialIds = new bytes[](l);
+        out_credentialIds = new bytes[](length);
 
-        for( uint i = 0; i < l; i++ )
+        for( uint i = 0; i < length; i++ )
         {
             UserCredential storage cred = credentialsByHashedCredentialId[credentialIdHashes[i]];
 
@@ -131,7 +213,7 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         }
     }
 
-    function getUserFromHashedCredentialId (bytes32 in_credentialIdHashed)
+    function internal_getUserFromHashedCredentialId (bytes32 in_credentialIdHashed)
         internal view
         returns (User storage user)
     {
@@ -142,103 +224,95 @@ contract WebAuthNExample is WebAuthNExampleStorage {
         return users[username];
     }
 
-    function getCredentialAndUser (bytes32 in_credentialIdHashed)
+    function internal_getCredentialAndUser (bytes32 in_credentialIdHashed)
         internal view
-        returns (User memory user, UserCredential memory credential)
+        returns (
+            User storage user,
+            UserCredential storage credential
+        )
     {
-        user = getUserFromHashedCredentialId(in_credentialIdHashed);
+        user = internal_getUserFromHashedCredentialId(in_credentialIdHashed);
 
         credential = credentialsByHashedCredentialId[in_credentialIdHashed];
 
         require( user.username == credential.username, "getCredentialAndUser" );
     }
 
-    /**
-     * Verify the clientDataJSON structure
-     * @custom:see https://developer.mozilla.org/en-US/docs/Web/API/AuthenticatorResponse/clientDataJSON
-     * @param in_challenge Authenticator challenge (32 bytes)
-     * @param in_clientDataTokens JSON data split into key/value tokens (see: MakeJSON.sol)
-     */
-    function verifyClientDataTokens (
-        bytes32 in_challenge,
-        MakeJSON.KeyValue[] calldata in_clientDataTokens
-    )
-        internal pure
-        returns (bool)
-    {
-        // Verify the raw challenge matches what's in the JSON
-        string memory challengeBase64 = Base64URL.encode(abi.encodePacked(in_challenge), false);
-        bytes32 challengeBase64Hashed = keccak256(bytes(challengeBase64));
-
-        bool isTypeOk = false;      // type == webauthn.get
-        bool isChallengeOk = false;
-
-        for( uint i = 0; i < in_clientDataTokens.length; i++ )
-        {
-            MakeJSON.KeyValue calldata item = in_clientDataTokens[i];
-            bytes32 keyHash = keccak256(bytes(item.k));
-            bytes32 valueHash = keccak256(bytes(item.v));
-
-            if( keyHash == CHALLENGE_KEY_HASH )
-            {
-                isChallengeOk = challengeBase64Hashed == valueHash;
-            }
-            else if( keyHash == TYPE_KEY_HASH ) {
-                isTypeOk = valueHash == WEBAUTHN_GET_HASH;
-            }
-
-            // Other keys are ignored
-        }
-
-        return isChallengeOk && isTypeOk;
-    }
-
-    function verifyECES256P256 (
+    function internal_verifyECES256P256 (
         bytes32 in_credentialIdHashed,
         bytes32 in_challenge,
         AuthenticatorResponse calldata in_resp
     )
-        public view
-        returns (User memory user)
+        internal view
+        returns (User storage user)
     {
-        UserCredential memory credential;
+        UserCredential storage credential;
 
-        (user, credential) = getCredentialAndUser(in_credentialIdHashed);
+        (user, credential) = internal_getCredentialAndUser(in_credentialIdHashed);
 
-        require( verifyClientDataTokens(in_challenge, in_resp.clientDataTokens), "verifyClientDataTokens" );
-
-        string memory clientDataJSON = MakeJSON.from(in_resp.clientDataTokens);
-
-        bytes32 digest = sha256(abi.encodePacked(in_resp.authenticatorData, sha256(abi.encodePacked(clientDataJSON))));
-
-        require( SECP256R1Precompile.ecdsa_verify_raw(credential.pubkey, uint256(digest), in_resp.sigR, in_resp.sigS), "verifyECES256P256" );
+        require( WebAuthN.verifyECES256P256(in_challenge, credential.pubkey, in_resp) );
 
         return user;
     }
 
+    function internal_proxyView(
+        User storage user,
+        bytes calldata in_data
+    )
+        internal view
+        returns (bytes memory out_data)
+    {
+        bool success;
+
+        (success, out_data) = address(user.account).staticcall(abi.encodeWithSelector(Account.sign.selector, in_data));
+
+        assembly {
+            switch success
+            case 0 { revert(add(out_data,32),mload(out_data)) }
+        }
+    }
+
+    function proxyViewPassword(
+        bytes32 in_hashedUsername,
+        bytes32 in_digest,
+        bytes calldata in_data
+    )
+        external view
+        returns (bytes memory out_data)
+    {
+        User storage user = users[in_hashedUsername];
+
+        require( user.username != bytes32(0) );
+
+        require( user.password != bytes32(0) );
+
+        require( keccak256(abi.encodePacked(user.password, in_data)) == in_digest );
+
+        return internal_proxyView(user, in_data);
+    }
+
+    /**
+     * Performs a proxied call to the verified users account
+     *
+     * @param in_credentialIdHashed .
+     * @param in_resp Authenticator response
+     * @param in_data calldata to pass to account proxy
+     * @return out_data result from proxied view call
+     */
     function proxyViewECES256P256(
         bytes32 in_credentialIdHashed,
         AuthenticatorResponse calldata in_resp,
-        bytes memory in_data
+        bytes calldata in_data
     )
-        public view
+        external view
         returns (bytes memory out_data)
     {
         bytes32 personalization = sha256(abi.encodePacked(block.chainid, address(this), salt));
 
         bytes32 challenge = sha256(abi.encodePacked(personalization, sha256(in_data)));
 
-        User memory user = this.verifyECES256P256(in_credentialIdHashed, challenge, in_resp);
+        User storage user = internal_verifyECES256P256(in_credentialIdHashed, challenge, in_resp);
 
-        in_data = abi.encodeWithSelector(Account.sign.selector, "");
-
-        bool success;
-
-        (success, out_data) = address(user.account).staticcall(in_data);
-
-        assembly {
-            switch success
-            case 0 { revert(add(out_data,32),mload(out_data)) }
-        }
+        return internal_proxyView(user, in_data);
     }
 }

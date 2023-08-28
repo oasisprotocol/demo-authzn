@@ -1,10 +1,14 @@
 import { subscribe } from "exome";
-import { sha256, toBeArray, toBeHex, toBigInt } from "ethers";
+import { ZeroHash, sha256, toBeArray, toBeHex, toBigInt } from "ethers";
 import { WebAuthNExample__factory } from "demo-authzn-backend";
 import { pbkdf2Sync } from "pbkdf2"
 
-import { EthProviders } from './ctx.ts'
-import { credentialCreate, credentialGet } from './webauthn.ts';
+import * as sapphire from "@oasisprotocol/sapphire-paratime";
+import { ethers } from "ethers";
+import { Exome } from "exome"
+
+import { NETWORKS, NetworkDefinition } from "./networks.ts";
+import { credentialCreate, credentialGet } from "demo-authzn-backend/src/webauthn.ts";
 import { Account__factory } from "demo-authzn-backend/typechain-types/index.ts";
 
 // ------------------------------------------------------------------
@@ -13,6 +17,58 @@ export interface AppConfig {
   sapphireJsonRpc: string;
   webauthContract: string;
   sapphireChainId: number;
+}
+
+// ------------------------------------------------------------------
+
+export interface EthWallet {
+  chainId: number;
+  network?: NetworkDefinition;
+}
+
+// ------------------------------------------------------------------
+
+export class EthProviders extends Exome
+{
+  public up?: ethers.JsonRpcProvider;
+
+  // Sapphire Wrapped Provider
+  public swp?: ethers.JsonRpcProvider & sapphire.SapphireAnnex;
+
+  public wallet?: EthWallet;
+
+  public connected: boolean;
+
+  constructor (private _config: AppConfig)
+  {
+      super();
+
+      this.connected = false;
+  }
+
+  async refresh ()
+  {
+      const nid = this._config.sapphireChainId;
+      const n = nid in NETWORKS ? NETWORKS[nid] : undefined;
+      this.wallet = {
+          chainId: nid,
+          network: n
+      };
+
+      this.up = new ethers.JsonRpcProvider(this._config.sapphireJsonRpc);
+
+      this.swp = sapphire.wrap(this.up);
+
+      this.connected = true;
+
+      return true;
+  }
+
+  async attach ()
+  {
+      await this.refresh();
+      return true;
+  }
 }
 
 // ------------------------------------------------------------------
@@ -26,82 +82,6 @@ function setDisabled(element:HTMLElement, disabled:boolean) {
     return element.setAttribute('disabled', 'disabled');
   }
   element.removeAttribute('disabled');
-}
-
-/**
- * Displays wallet connectivity status and allows you to connect etc.
- */
-class WalletManager
-{
-  status = document.querySelector<HTMLSpanElement>('#wallet-status')!;
-  network = document.querySelector<HTMLSpanElement>('#wallet-network')!;
-  accounts = document.querySelector<HTMLSelectElement>('#wallet-accounts')!;
-  connect = document.querySelector<HTMLButtonElement>('#wallet-connect')!;
-  switch = document.querySelector<HTMLButtonElement>('#wallet-switch')!;
-
-  constructor (private _providers:EthProviders, private _config:AppConfig) {
-    subscribe(_providers, this.refresh.bind(this));
-  }
-
-  async attach () {
-    this.connect.addEventListener('click', this._onConnectClick.bind(this));
-    this.switch.addEventListener('click', this._onSwitchClick.bind(this));
-    this.accounts.addEventListener('change', this._onAccounts.bind(this));
-    this.refresh();
-  }
-
-  async _onSwitchClick () {
-    this._providers.switchNetwork(this._config.sapphireChainId);
-  }
-
-  async _onConnectClick () {
-    const providers = this._providers;
-    if( ! providers.connected ) {
-      await providers.connect();
-    }
-  }
-
-  async _onAccounts () {
-    for( const o of this.accounts.selectedOptions ) {
-      const a = o.innerText;
-      this._providers.selectAccount(a);
-    }
-  }
-
-  refresh () {
-    const p = this._providers;
-    const w = p.wallet;
-    const connected = p.connected;
-    setDisabled(this.connect, connected);
-    setVisibility(this.connect, !connected);
-    setVisibility(this.switch, w && w.chainId !== this._config.sapphireChainId);
-
-    this.status.innerText = connected ? 'Connected' : 'Not Connected';
-
-    // Populate dropdown list of accounts
-    this.accounts.innerHTML = '';
-    if( p.accounts.length ) {
-      for( let a of p.accounts ) {
-        const e = document.createElement('option');
-        e.innerText = a;
-        if( a == p.account ) {
-          e.setAttribute('selected', 'selected');
-        }
-        this.accounts.appendChild(e);
-      }
-      setDisabled(this.accounts, false);
-      setVisibility(this.accounts, true);
-    }
-    else {
-      setDisabled(this.accounts, true);
-      setVisibility(this.accounts, false);
-    }
-
-    if( w ) {
-      const name = w.network ? ` (${w.network.chainName})` : '';
-      this.network.innerText = `Network: ${w.chainId}${name}`;
-    }
-  }
 }
 
 // ------------------------------------------------------------------
@@ -125,6 +105,7 @@ class UsernameManager
 
   constructor (private _providers:EthProviders, private _config: AppConfig) {
     subscribe(_providers, this._onProvidersUpdate.bind(this));
+    this._onProvidersUpdate();
   }
 
   async salt () {
@@ -135,7 +116,8 @@ class UsernameManager
   }
 
   async _onProvidersUpdate() {
-    const disabled = ! this._providers.connected;
+    //const disabled = ! this._providers.connected;
+    const disabled = false;
     setDisabled(this.usernameInput, disabled);
     setDisabled(this.usernameCheck, disabled);
   }
@@ -240,9 +222,6 @@ class WebAuthNManager
   registerButton = document.querySelector<HTMLButtonElement>('#webauthn-register-button')!;
   registerStatus = document.querySelector<HTMLSpanElement>('#webauthn-register-status')!;
   registerSpinner = document.querySelector<HTMLImageElement>('#webauthn-register-spinner')!;
-  loginButton = document.querySelector<HTMLButtonElement>('#webauthn-login-button')!;
-  loginStatus = document.querySelector<HTMLSpanElement>('#webauthn-login-status')!;
-  loginSpinner = document.querySelector<HTMLImageElement>('#webauthn-login-spinner')!;
 
   testButton = document.querySelector<HTMLButtonElement>('#webauthn-test-button')!;
   testStatus = document.querySelector<HTMLSpanElement>('#webauthn-test-status')!;
@@ -257,28 +236,21 @@ class WebAuthNManager
     return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.swp);
   }
 
-  get signingContract () {
-    if( ! this._providers.sws ) {
-      throw Error('Not connected!');
-    }
-    return WebAuthNExample__factory.connect(this._config.webauthContract, this._providers.sws);
-  }
-
   constructor(private _providers:EthProviders, private _config:AppConfig) {
     subscribe(_providers, this._onProvidersUpdate.bind(this));
     this.usernameManager = new UsernameManager(_providers, _config);
+    this._onProvidersUpdate();
   }
 
   async _onProvidersUpdate () {
-    const disabled = ! this._providers.connected;
+    //const disabled = ! this._providers.connected;
+    const disabled = false;
     setDisabled(this.registerButton, disabled);
-    setDisabled(this.loginButton, disabled);
     setDisabled(this.testButton, disabled);
   }
 
   async attach () {
     this.registerButton.addEventListener('click', this._onRegister.bind(this));
-    this.loginButton.addEventListener('click', this._onLogin.bind(this));
     this.testButton.addEventListener('click', this._onTest.bind(this));
     await this.usernameManager.attach();
   }
@@ -313,8 +285,24 @@ class WebAuthNManager
         }
 
         try {
-          const tx = await this.signingContract.registerECES256P256(hashedUsername, cred.id, cred.ad.at!.credentialPublicKey!)
-          this.registerStatus.innerText = `Registering (tx: ${tx.hash})`;
+          // Request that contract signs our registration transaction
+          const provider = this.readonlyContract.runner!.provider!;
+          const gasPrice = (await provider.getFeeData())!.gasPrice!;
+          const nonce = await provider.getTransactionCount(await this.readonlyContract.gaspayingAddress());
+          const signedTx = await this.readonlyContract.gasless_registerECES256P256(
+            {
+              hashedUsername: hashedUsername,
+              credentialId: cred.id,
+              pubkey: cred.ad.attestedCredentialData!.credentialPublicKey!,
+              optionalPassword: ZeroHash
+            },
+            nonce, gasPrice);
+
+          // Then send the returned transaction and wait for it to be confirmed
+          const txHash = await this._providers.up!.send('eth_sendRawTransaction', [signedTx]) as string;
+          this.registerStatus.innerText = `Registering (tx: ${txHash})`;
+          await this._providers.up?.waitForTransaction(txHash);
+          const tx = (await this._providers.swp?.getTransaction(txHash))!;
           const receipt = await tx.wait();
           this.registerStatus.innerText = `Registered (block: ${receipt!.blockNumber}, tx: ${tx.hash}, gas: ${receipt!.gasUsed})`;
         }
@@ -331,33 +319,6 @@ class WebAuthNManager
     }
     finally {
       setVisibility(this.registerSpinner, false);
-    }
-  }
-
-  async _onLogin () {
-    try {
-      this.loginSpinner.style.visibility = 'visible';
-      if( await this.usernameManager.checkUsername(true) )
-      {
-        this.loginStatus.innerText = 'Fetching Credentials';
-        const hashedUsername = await this.usernameManager.hashedUsername();
-        const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
-        const binaryCreds = credentials.map((_) => toBeArray(_));
-        const authed = await credentialGet(binaryCreds);
-
-        // Ask contract to verify our WebAuthN attestation
-        const resp = await this.readonlyContract.verifyECES256P256(
-          authed.credentialIdHashed,
-          authed.challenge,
-          authed.resp);
-
-        // Display login status, why is Uint8Array comparison fkd in JS?
-        const success = 0 == indexedDB.cmp(toBeArray(resp.username), hashedUsername);
-        this.loginStatus.innerText = success ? `Success (${resp.account})` : 'Failure!';
-      }
-    }
-    finally {
-      this.loginSpinner.style.visibility = 'hidden';
     }
   }
 
@@ -392,7 +353,6 @@ class WebAuthNManager
         // Perform proxied view call with WebAuthN
         const resp = await this.readonlyContract.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
         const respDecoded = ai.decodeFunctionResult('sign', resp);
-        console.log(respDecoded);
         this.testStatus.innerText = `${respDecoded}`;
       }
     }
@@ -409,19 +369,16 @@ class WebAuthNManager
 
 class App {
   providers: EthProviders;
-  walletManager: WalletManager;
   webauthnManager: WebAuthNManager;
 
   constructor (_config: AppConfig) {
-    this.providers = new EthProviders();
-    this.walletManager = new WalletManager(this.providers, _config);
+    this.providers = new EthProviders(_config);
     this.webauthnManager = new WebAuthNManager(this.providers, _config);
     console.log('App Started', _config);
   }
 
   async attach () {
     await this.providers.attach();
-    await this.walletManager.attach();
     await this.webauthnManager.attach();
   }
 }

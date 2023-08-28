@@ -16,14 +16,14 @@ library MakeJSON {
 
     bytes32 constant internal BOOL_TRUE = keccak256(abi.encodePacked("true"));
 
-    function from(KeyValue[] calldata items)
+    function from(KeyValue[] memory items)
         internal pure
         returns (string memory out)
     {
         return from(items, 0);
     }
 
-    function from(KeyValue[] calldata items, uint offset)
+    function from(KeyValue[] memory items, uint offset)
         internal pure
         returns (string memory out)
     {
