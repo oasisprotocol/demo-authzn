@@ -15,4 +15,11 @@ task("deploy", "Deploy contracts necessary for the frontend")
         const chainId = (await contract.runner!.provider!.getNetwork()).chainId;
         console.log(`VITE_WEBAUTH_ADDR=${await contract.getAddress()}`);
         console.log(`VITE_SAPPHIRE_CHAIN_ID=0x${Number(chainId).toString(16)}`);
+
+        if( chainId == 0x5affn ) {
+            console.log('VITE_SAPPHIRE_JSONRPC=https://testnet.sapphire.oasis.dev')
+        }
+        else if( chainId == 0x5afen ) {
+            console.log('VITE_SAPPHIRE_JSONRPC=https://sapphire.oasis.io')
+        }
     });
