@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {SignatureRSV, EthereumUtils} from "@oasisprotocol/sapphire-contracts/contracts/EthereumUtils.sol";
 import {EIP155Signer} from "@oasisprotocol/sapphire-contracts/contracts/EIP155Signer.sol";
-import {CloneFactory} from "./CloneFactory.sol";
+import {CloneFactory} from "./lib/CloneFactory.sol";
 
 contract AccountFactory is CloneFactory {
     Account private account;

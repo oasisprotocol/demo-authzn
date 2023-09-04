@@ -12,9 +12,14 @@ task("deploy", "Deploy contracts necessary for the frontend")
         const contract = await contractFactory.deploy({value: parseEther('1.0')});
         await contract.waitForDeployment();
 
+        const totpFactory = await hre.ethers.getContractFactory('TOTPExample');
+        const totpContract = await totpFactory.deploy();
+        await totpContract.waitForDeployment();
+
         const chainId = (await contract.runner!.provider!.getNetwork()).chainId;
         console.log(`VITE_WEBAUTH_ADDR=${await contract.getAddress()}`);
         console.log(`VITE_SAPPHIRE_CHAIN_ID=0x${Number(chainId).toString(16)}`);
+        console.log(`VITE_TOTP_CONTRACT=${await totpContract.getAddress()}`);
 
         if( chainId == 0x5affn ) {
             console.log('VITE_SAPPHIRE_JSONRPC=https://testnet.sapphire.oasis.dev')

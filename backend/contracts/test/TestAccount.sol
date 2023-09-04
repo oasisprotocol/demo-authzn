@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {Account,AccountFactory} from "../lib/Account.sol";
+import {Account,AccountFactory} from "../Account.sol";
 
 contract TestAccount {
     AccountFactory private factory;
