@@ -16,7 +16,10 @@ describe('OTP', function () {
         const OTPSHA256_Contract = await ethers.getContractFactory("TestOTPSHA256");
         otpsha256 = await OTPSHA256_Contract.deploy();
 
-        const OTPSHA1_Contract = await ethers.getContractFactory("TestOTPSHA1");
+        const sha1lib = await (await ethers.getContractFactory('SHA1')).deploy();
+        await sha1lib.waitForDeployment();
+
+        const OTPSHA1_Contract = await ethers.getContractFactory("TestOTPSHA1", {libraries: {SHA1: await sha1lib.getAddress()}});
         otpsha1 = await OTPSHA1_Contract.deploy();
     })
 

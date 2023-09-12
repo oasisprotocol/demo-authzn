@@ -6,7 +6,7 @@ import {Sapphire} from "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol
 import {EthereumUtils} from "@oasisprotocol/sapphire-contracts/contracts/EthereumUtils.sol";
 import {EIP155Signer} from "@oasisprotocol/sapphire-contracts/contracts/EIP155Signer.sol";
 
-import {Account,AccountFactory} from "./lib/Account.sol";
+import {Account,AccountFactory} from "./Account.sol";
 import {WebAuthN,CosePublicKey,AuthenticatorResponse} from "./lib/WebAuthN.sol";
 
 
@@ -264,7 +264,7 @@ contract WebAuthNExample is WebAuthNExampleStorage
     {
         bool success;
 
-        (success, out_data) = address(user.account).staticcall(abi.encodeWithSelector(Account.sign.selector, in_data));
+        (success, out_data) = address(user.account).staticcall(in_data);
 
         assembly {
             switch success

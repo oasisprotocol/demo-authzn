@@ -145,8 +145,6 @@ function decodeAttestationObject (aob:ArrayBufferLike)
 
     const ad = attestationObject.authData;
 
-    console.log(ad.toString());
-
     return decodeAuthenticatorData(ad);
 }
 
@@ -177,10 +175,10 @@ export async function credentialCreate (rp: PublicKeyCredentialRpEntity, user:Pu
         throw new Error('No PublicKeyCredential returned!');
     }
 
-    const challengeB64 = arrayBufferToBase64(challenge);
+    //const challengeB64 = arrayBufferToBase64(challenge);
     const resp = pkc.response as AuthenticatorAttestationResponse;
     const cdj = new TextDecoder('utf-8').decode(resp.clientDataJSON);
-    console.log(pkc, cdj, challengeB64);
+
     return {
         id: new Uint8Array(pkc.rawId),
         cd: cdj,
@@ -251,7 +249,7 @@ export async function credentialGet(credentials:Uint8Array[], challenge?: Uint8A
     const s = result.s.toBigInt();
 
     const clientData = JSON.parse(new TextDecoder().decode(resp.clientDataJSON));
-    console.log(clientData);
+
     return {
         credentialIdHashed: keccak256(new Uint8Array(authed.rawId)),
         challenge: challenge,

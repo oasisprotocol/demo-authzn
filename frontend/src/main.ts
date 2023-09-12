@@ -9,7 +9,8 @@ import { Exome } from "exome"
 
 import { NETWORKS, NetworkDefinition } from "./networks.ts";
 import { credentialCreate, credentialGet } from "demo-authzn-backend/src/webauthn.ts";
-import { Account__factory } from "demo-authzn-backend/typechain-types/index.ts";
+import { Account__factory, TOTPExample__factory } from "demo-authzn-backend/typechain-types/index.ts";
+import { resolvePackageData } from "vite";
 
 // ------------------------------------------------------------------
 
@@ -17,6 +18,7 @@ export interface AppConfig {
   sapphireJsonRpc: string;
   webauthContract: string;
   sapphireChainId: number;
+  totpContract: string;
 }
 
 // ------------------------------------------------------------------
@@ -227,6 +229,10 @@ class WebAuthNManager
   testStatus = document.querySelector<HTMLSpanElement>('#webauthn-test-status')!;
   testSpinner = document.querySelector<HTMLImageElement>('#webauthn-test-spinner')!;
 
+  totpButton = document.querySelector<HTMLButtonElement>('#webauthn-totp-button')!;
+  totpStatus = document.querySelector<HTMLSpanElement>('#webauthn-totp-status')!;
+  totpSpinner = document.querySelector<HTMLImageElement>('#webauthn-totp-spinner')!;
+
   usernameManager: UsernameManager;
 
   get readonlyContract () {
@@ -247,11 +253,13 @@ class WebAuthNManager
     const disabled = false;
     setDisabled(this.registerButton, disabled);
     setDisabled(this.testButton, disabled);
+    setDisabled(this.totpButton, disabled);
   }
 
   async attach () {
     this.registerButton.addEventListener('click', this._onRegister.bind(this));
     this.testButton.addEventListener('click', this._onTest.bind(this));
+    this.totpButton.addEventListener('click', this._onTOTP.bind(this));
     await this.usernameManager.attach();
   }
 
@@ -320,7 +328,38 @@ class WebAuthNManager
     finally {
       setVisibility(this.registerSpinner, false);
     }
-  }
+  } // _onRegister
+
+  async makeAccountViewCall(calldata:string)
+  {
+    const provider = this.readonlyContract.runner!.provider!;
+    const network = await provider.getNetwork();
+    const chainId = network.chainId;
+
+    // Construct personalized challenge hash of calldata etc.
+    const accountIdHex = (await this.readonlyContract.getAddress()).slice(2);
+    const saltHex = toBeHex(toBigInt(await this.usernameManager.salt()),32);
+    const personalization = sha256('0x' + toBeHex(chainId!, 32).slice(2) + accountIdHex + saltHex.slice(2));
+    const personalizedHash = sha256(personalization + sha256(calldata).slice(2));
+
+    // Perform WebAuthN signing of challenge
+    const challenge = toBeArray(personalizedHash);
+    const hashedUsername = await this.usernameManager.hashedUsername();
+    const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
+    const binaryCreds = credentials.map((_) => toBeArray(_));
+    const authed = await credentialGet(binaryCreds, challenge);
+
+    // Perform proxied view call with WebAuthN
+    return await this.readonlyContract.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
+  } // makeAccountViewCall
+
+  async makeProxiedViewCall(address:string, calldata:string) : Promise<string>
+  {
+    const ai = Account__factory.createInterface();
+    const outerCalldata = ai.encodeFunctionData("staticcall", [address, calldata]);
+    const resp = await this.makeAccountViewCall(outerCalldata);
+    return ai.decodeFunctionResult('staticcall', resp).out_data;
+  } // makeProxiedViewCall
 
   async _onTest () {
     setVisibility(this.testSpinner, true);
@@ -328,30 +367,11 @@ class WebAuthNManager
       if( await this.usernameManager.checkUsername(true) ) {
         this.testStatus.innerText = 'Fetching Credentials';
 
-        const provider = this.readonlyContract.runner!.provider!;
-        const network = await provider.getNetwork();
-        const chainId = network.chainId;
-
-        // Create random input and encode `.sign` call
         const ai = Account__factory.createInterface();
         const randStuff = crypto.getRandomValues(new Uint8Array(32));
         const calldata = ai.encodeFunctionData("sign", [randStuff]);
 
-        // Construct personalized challenge hash of calldata etc.
-        const accountIdHex = (await this.readonlyContract.getAddress()).slice(2);
-        const saltHex = toBeHex(toBigInt(await this.usernameManager.salt()),32);
-        const personalization = sha256('0x' + toBeHex(chainId!, 32).slice(2) + accountIdHex + saltHex.slice(2));
-        const personalizedHash = sha256(personalization + sha256(calldata).slice(2));
-
-        // Perform WebAuthN signing of challenge
-        const challenge = toBeArray(personalizedHash);
-        const hashedUsername = await this.usernameManager.hashedUsername();
-        const credentials = await this.readonlyContract.credentialIdsByUsername(hashedUsername);
-        const binaryCreds = credentials.map((_) => toBeArray(_));
-        const authed = await credentialGet(binaryCreds, challenge);
-
-        // Perform proxied view call with WebAuthN
-        const resp = await this.readonlyContract.proxyViewECES256P256(authed.credentialIdHashed, authed.resp, calldata);
+        const resp = await this.makeAccountViewCall(calldata);
         const respDecoded = ai.decodeFunctionResult('sign', resp);
         this.testStatus.innerText = `${respDecoded}`;
       }
@@ -362,7 +382,29 @@ class WebAuthNManager
     finally {
       setVisibility(this.testSpinner, false);
     }
-  }
+  } // _onTest
+
+  async _onTOTP () {
+    setVisibility(this.totpSpinner, true);
+    try {
+      if( await this.usernameManager.checkUsername(true) ) {
+        this.totpStatus.innerText = 'Fetching Credentials & Signing';
+
+        const ti = TOTPExample__factory.createInterface();
+
+        const secret = ti.decodeFunctionResult('deriveSecret', await this.makeProxiedViewCall(process.env.VITE_TOTP_CONTRACT!, ti.encodeFunctionData('deriveSecret')));
+        const code = ti.decodeFunctionResult('generate', await this.makeProxiedViewCall(process.env.VITE_TOTP_CONTRACT!, ti.encodeFunctionData('generate')));
+
+        this.totpStatus.innerText = `${secret} ${code}`;
+      }
+    }
+    catch( e:any ) {
+      this.totpStatus.innerText = `${e}`;
+    }
+    finally {
+      setVisibility(this.totpSpinner, false);
+    }
+  } // _onTOTP
 }
 
 // ------------------------------------------------------------------
@@ -393,7 +435,8 @@ window.onload = async () => {
   const config = {
     sapphireJsonRpc: process.env.VITE_SAPPHIRE_JSONRPC!,
     webauthContract: process.env.VITE_WEBAUTH_ADDR!,
-    sapphireChainId: parseInt(process.env.VITE_SAPPHIRE_CHAIN_ID!,16)
+    sapphireChainId: parseInt(process.env.VITE_SAPPHIRE_CHAIN_ID!,16),
+    totpContract: process.env.VITE_TOTP_CONTRACT!
   } as AppConfig;
   if( ! config.webauthContract ) {
     throw Error('No WebAuthNExample contract address specified! (VITE_WEBAUTH_ADDR)');
