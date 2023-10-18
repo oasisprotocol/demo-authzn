@@ -10,7 +10,6 @@ import { Exome } from "exome"
 import { NETWORKS, NetworkDefinition } from "./networks.ts";
 import { credentialCreate, credentialGet } from "demo-authzn-backend/src/webauthn.ts";
 import { Account__factory, TOTPExample__factory } from "demo-authzn-backend/typechain-types/index.ts";
-import { resolvePackageData } from "vite";
 
 // ------------------------------------------------------------------
 
