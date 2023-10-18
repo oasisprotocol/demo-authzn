@@ -148,12 +148,12 @@ function decodeAttestationObject (aob:ArrayBufferLike)
     return decodeAuthenticatorData(ad);
 }
 
-function arrayBufferToBase64(buffer:Uint8Array) {
+/*function arrayBufferToBase64(buffer:Uint8Array) {
     var binary = '';
     var bytes = [].slice.call(buffer);
     bytes.forEach((b) => binary += String.fromCharCode(b));
     return window.btoa(binary);
-};
+}*/
 
 export async function credentialCreate (rp: PublicKeyCredentialRpEntity, user:PublicKeyCredentialUserEntity, challenge:Uint8Array)
 {
