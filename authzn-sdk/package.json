@@ -1,0 +1,19 @@
+{
+  "name": "authzn-sdk",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "checkTs": "tsc --noEmit",
+    "clean": "rimraf lib",
+    "watch": "tsc --watch"
+  },
+  "main": "src/index.ts",
+  "devDependencies": {
+    "typescript": "^5.0.2"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  }
+}

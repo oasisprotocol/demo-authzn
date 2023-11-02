@@ -101,14 +101,35 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
         value: 'Please wait...'
       })
 
-      // TODO: Async validate if username is already taken - @returns false in case username is taken
-      const tx = await register(username.toLowerCase());
-      console.log('tx', tx);
+      const _username = username.toLowerCase();
 
-      setStatus({
-        type: 'success',
-        value: 'Registered successfully!'
-      })
+      // TODO: Async validate if username is already taken - @returns false in case username is taken
+      const tx = await register(_username);
+
+      if (tx === false) {
+        setStatus({
+          type: 'error',
+          value: 'Username is already taken!'
+        })
+      } else {
+        console.log('tx', tx);
+
+        if (window.opener) {
+          const params = new URLSearchParams(window.location.search);
+
+          // TODO: Unsafe
+          window.opener.postMessage({
+            username: _username
+          }, params.get('origin'));
+
+          window.close();
+        }
+
+        setStatus({
+          type: 'success',
+          value: 'Registered successfully!'
+        })
+      }
     } catch (ex) {
       console.error(ex);
 
