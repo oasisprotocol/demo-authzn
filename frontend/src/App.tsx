@@ -1,5 +1,6 @@
 import {FunctionComponent} from "preact";
 import Router from "preact-router";
+import {createHashHistory} from "history";
 import {Register} from "./pages/Register";
 import {Login} from "./pages/Login";
 import {Redirect} from "./components/Redirect";
@@ -14,7 +15,7 @@ export const App: FunctionComponent = () => {
       <EthereumContextProvider>
         <WebAuthNContextProvider>
           <Page>
-            <Router>
+            <Router history={createHashHistory()}>
               <Register path="/register"/>
               <Login path="/login"/>
               <Redirect path="/" to="/register"/>

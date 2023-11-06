@@ -116,11 +116,18 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
 
         if (window.opener) {
           const params = new URLSearchParams(window.location.search);
+          const hashParams = new URLSearchParams(window.location.hash.includes('?') ?
+            window.location.hash.split('?')[1]
+            :
+            window.location.hash
+          )
+          hashParams.const
+          origin = params.get('origin') ?? hashParams.get('origin');
 
           // TODO: Unsafe
           window.opener.postMessage({
             username: _username
-          }, params.get('origin'));
+          }, origin);
 
           window.close();
         }
