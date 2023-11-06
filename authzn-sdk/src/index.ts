@@ -1,13 +1,8 @@
-import dotenv from 'dotenv';
-
 const DEFAULT_TIMEOUT = 300000; // 5min
 
-let authOrigin = 'http://localhost:5173';
-if (globalThis.process) {
-  dotenv.config({override: true});
+const { VITE_BASE_AUTH_URL } = import.meta.env;
 
-  authOrigin = globalThis.process.env.BASE_AUTH_URL;
-}
+let authOrigin = VITE_BASE_AUTH_URL ?? 'https://authnz.neocities.org';
 
 declare global {
   interface WindowEventMap {
@@ -27,8 +22,8 @@ enum AUTHZN_EVENTS {
   SEND_TRANSACTION = 'sendTransaction'
 }
 
-let windowObjectReference = null;
-let previousUrl = null;
+let windowObjectRef: WindowProxy | null = null;
+let previousUrl: string | null = null;
 
 const handleMessage = (event: MessageEvent, eventType?: 'register' | 'login' | 'sendTransaction') => {
   if (event.origin !== authOrigin) {
@@ -61,42 +56,42 @@ const handleMessage = (event: MessageEvent, eventType?: 'register' | 'login' | '
   }
 }
 
-const register = async (url = `${authOrigin}/register?origin=${window.location.origin}`, name = 'Register AuthNZ'): Promise<RegisterData> => {
+const register = async (url = `${authOrigin}/#/register?origin=${window.location.origin}`, name = 'Register AuthNZ'): Promise<RegisterData> => {
   window.removeEventListener('message', handleMessage);
   const strWindowFeatures =
     'toolbar=no, menubar=no, width=1280, height=700, top=100, left=100';
 
-  if (windowObjectReference === null || windowObjectReference.closed) {
-    windowObjectReference = window.open(url, name, strWindowFeatures);
+  if (windowObjectRef === null || windowObjectRef.closed) {
+    windowObjectRef = window.open(url, name, strWindowFeatures);
   } else if (previousUrl !== url) {
-    windowObjectReference = window.open(url, name, strWindowFeatures);
-    windowObjectReference.focus();
+    windowObjectRef = window.open(url, name, strWindowFeatures);
+    windowObjectRef?.focus();
   } else {
-    windowObjectReference.focus();
+    windowObjectRef.focus();
   }
 
   window.addEventListener('message', event => handleMessage(event, AUTHZN_EVENTS.REGISTER), false);
   previousUrl = url;
 
-  return new Promise((resolve, reject) => {
+  return new Promise<RegisterData>((resolve, reject) => {
+    const t = setTimeout(() => {
+      window.removeEventListener(AUTHZN_EVENTS.REGISTER, resolveRegisterEvent);
+
+      if (windowObjectRef) {
+        windowObjectRef.close();
+      }
+
+      reject('Register event timed out!');
+    }, DEFAULT_TIMEOUT);
+
     const resolveRegisterEvent = (e: CustomEvent) => {
       window.removeEventListener(AUTHZN_EVENTS.REGISTER, resolveRegisterEvent);
       clearInterval(t);
       resolve(e.detail);
     }
 
-    const t = setTimeout(() => {
-      window.removeEventListener(AUTHZN_EVENTS.REGISTER, resolveRegisterEvent);
-
-      if (windowObjectReference) {
-        windowObjectReference.close();
-      }
-
-      reject('Register event timed out!');
-    }, DEFAULT_TIMEOUT);
-
     window.addEventListener(AUTHZN_EVENTS.REGISTER, resolveRegisterEvent);
-  })
+  });
 }
 
 
