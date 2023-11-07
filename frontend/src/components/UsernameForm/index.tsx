@@ -5,6 +5,7 @@ import {Button} from "../Button";
 import {Message, MessageType} from "../Message";
 import {RegexUtils} from "../../utils/regex.utils";
 import {useWebAuthN} from "../../providers/WebAuthNProvider";
+import {WindowUtils} from "../../utils/window.utils";
 
 export enum UsernameFormType {
   LOGIN = 'login',
@@ -28,7 +29,7 @@ interface UsernameFormLabels {
 const labelsMap = {
   [UsernameFormType.LOGIN]: {
     header: 'Sign in',
-    inputPlaceholder: 'Enter a username',
+    inputPlaceholder: 'Enter your username',
     submitLabel: 'Login'
   },
   [UsernameFormType.REGISTER]: {
@@ -42,12 +43,13 @@ const labelsMap = {
 }
 
 export const UsernameForm: FunctionComponent<Props> = ({type}) => {
-  const {register} = useWebAuthN();
+  const {register, login, getAccountAddress} = useWebAuthN();
 
   const {header, inputPlaceholder, submitLabel}: UsernameFormLabels = labelsMap[type];
 
   const [state, setState] = useState<UsernameFormType | UsernameFormInternalStates>(type);
   const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const showForm = [UsernameFormType.LOGIN, UsernameFormType.REGISTER].includes(state as UsernameFormType);
 
   const [username, setUsername] = useState('')
@@ -95,6 +97,10 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
       return;
     }
 
+    if (!isLoading) {
+      setIsLoading(true);
+    }
+
     try {
       setStatus({
         type: 'info',
@@ -103,39 +109,48 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
 
       const _username = username.toLowerCase();
 
-      // TODO: Async validate if username is already taken - @returns false in case username is taken
-      const tx = await register(_username);
+      if (type === UsernameFormType.REGISTER) {
 
-      if (tx === false) {
-        setStatus({
-          type: 'error',
-          value: 'Username is already taken!'
-        })
-      } else {
-        console.log('tx', tx);
+        // TODO: Async validate if username is already taken - @returns false in case username is taken
+        const tx = await register(_username);
 
-        if (window.opener) {
-          const params = new URLSearchParams(window.location.search);
-          const hashParams = new URLSearchParams(window.location.hash.includes('?') ?
-            window.location.hash.split('?')[1]
-            :
-            window.location.hash
-          )
-          hashParams.const
-          origin = params.get('origin') ?? hashParams.get('origin');
+        if (tx === false) {
+          setStatus({
+            type: 'error',
+            value: 'Username is already taken!'
+          })
+        } else {
+          console.log('tx', tx);
 
-          // TODO: Unsafe
-          window.opener.postMessage({
-            username: _username
-          }, origin);
+          setStatus({
+            type: 'success',
+            value: 'Registered successfully!'
+          });
 
-          window.close();
+          WindowUtils.postMessageToOpener({
+            username: _username,
+            address: await getAccountAddress(_username)
+          });
         }
+      } else if (type === UsernameFormType.LOGIN) {
+        const isLoggedIn = await login(_username);
 
-        setStatus({
-          type: 'success',
-          value: 'Registered successfully!'
-        })
+        if (!isLoggedIn) {
+          setStatus({
+            type: 'error',
+            value: 'Login failed!'
+          })
+        } else {
+          setStatus({
+            type: 'success',
+            value: 'Logged in successfully!'
+          });
+
+          WindowUtils.postMessageToOpener({
+            username: _username,
+            address: await getAccountAddress(_username)
+          });
+        }
       }
     } catch (ex) {
       console.error(ex);
@@ -146,6 +161,8 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
       })
     } finally {
       setState(type);
+
+      setIsLoading(false);
     }
   }
 

@@ -1,15 +1,18 @@
 import {createContext, FunctionComponent, JSX} from "preact";
 import {useContext, useState} from "preact/hooks";
 import {pbkdf2Sync} from "pbkdf2";
-import {BytesLike, toBeArray, ZeroHash} from "ethers";
+import {BytesLike, sha256, toBeArray, toBeHex, toBigInt, ZeroHash} from "ethers";
 import {useEthereum} from "./EthereumProvider";
-import {credentialCreate} from "demo-authzn-backend/src/webauthn.ts";
+import {credentialCreate, credentialGet} from "demo-authzn-backend/src/webauthn.ts";
 import {
   CosePublicKeyStruct
 } from "demo-authzn-backend/dist/typechain-types/contracts/WebAuthNExample.sol/WebAuthNExample";
 import {TransactionReceipt} from "ethers/src.ts/providers/provider";
+import {Account__factory} from "demo-authzn-backend/typechain-types/index.ts";
+import {recoverAddress} from "ethers";
 
 const _usernameHashesCache: Record<string, Buffer> = {};
+const _usernameAddressCache: Record<string, [string, string]> = {};
 
 interface WebAuthNProviderState {
   salt: UInt8Array | null;
@@ -18,6 +21,8 @@ interface WebAuthNProviderState {
 interface WebAuthNProviderContext {
   readonly state: WebAuthNProviderState;
   register: (username: string) => Promise<TransactionReceipt | false | null>;
+  login: (username: string) => Promise<boolean>;
+  getAccountAddress: (username: string) => Promise<string>;
 }
 
 const webAuthNProviderInitialState: WebAuthNProviderState = {
@@ -27,7 +32,7 @@ const webAuthNProviderInitialState: WebAuthNProviderState = {
 export const WebAuthNContext = createContext<WebAuthNProviderContext>({} as WebAuthNProviderContext)
 
 export const WebAuthNContextProvider: FunctionComponent = ({children}) => {
-  const {state: {webAuthNProvider, sapphireEthProvider}} = useEthereum()
+  const {state: {ethProvider, webAuthNProvider, sapphireEthProvider}} = useEthereum()
 
   const [state, setState] = useState<WebAuthNProviderState>({
     ...webAuthNProviderInitialState
@@ -69,6 +74,28 @@ export const WebAuthNContextProvider: FunctionComponent = ({children}) => {
     }
 
     return Promise.reject(new Error('[WebAuthNProvider] Unable to check if the user exists!'))
+  }
+
+  const _getAccount = async (username: string): Promise<[string, string]> => {
+    const hashedUsername = await _getHashedUsername(username)
+
+    if (hashedUsername in _usernameAddressCache) {
+      return _usernameAddressCache[hashedUsername];
+    }
+
+    if (hashedUsername) {
+      const account = (await webAuthNProvider.getAccount(hashedUsername as BytesLike)).toArray();
+      _usernameAddressCache[hashedUsername] = account;
+
+      return account;
+    }
+
+    return Promise.reject(new Error('[WebAuthNProvider] Unable to retrieve account!'))
+  }
+
+  const getAccountAddress = async (username: string): Promise<string> => {
+    const [pubkeyAddr] = await _getAccount(username);
+    return pubkeyAddr;
   }
 
   const _getCredentials = async (
@@ -142,9 +169,59 @@ export const WebAuthNContextProvider: FunctionComponent = ({children}) => {
     }
   }
 
+  const _verifyChallenge = async (calldata: string, username: string) => {
+    if (!webAuthNProvider || !ethProvider) {
+      throw new Error('[WebAuthNProvider] Unable to verify user, due to provider not being initialized!')
+    }
+
+    const network = await ethProvider.getNetwork();
+    const chainId = network.chainId;
+
+    const accountIdHex = (await webAuthNProvider.getAddress()).slice(2);
+    const saltHex = toBeHex(toBigInt(await _getSalt() as Uint8Array), 32);
+
+    const personalization = sha256('0x' + toBeHex(chainId!, 32).slice(2) + accountIdHex + saltHex.slice(2));
+    const personalizedHash = sha256(personalization + sha256(calldata).slice(2));
+
+    // Perform WebAuthN signing of challenge
+    const challenge = toBeArray(personalizedHash);
+    const hashedUsername = await _getHashedUsername(username);
+    const credentialIds = await webAuthNProvider.credentialIdsByUsername(hashedUsername);
+    const binaryCredentialIds = credentialIds.map((_) => toBeArray(_));
+    const credentials = await credentialGet(binaryCredentialIds, challenge);
+
+    const {credentialIdHashed, resp} = credentials;
+
+    return await webAuthNProvider.proxyViewECES256P256(credentialIdHashed, resp, calldata);
+  }
+
+  const login = async (username: string): Promise<boolean> => {
+    const isUsernameAvailable = !(await _getUserExists(username));
+
+    if (isUsernameAvailable) {
+      return false;
+    }
+
+    const [, secretKey] = await _getAccount(username);
+
+    const ai = Account__factory.createInterface();
+    const randStuff = crypto.getRandomValues(new Uint8Array(32));
+    const calldata = ai.encodeFunctionData("sign", [randStuff]);
+
+    const resp = await _verifyChallenge(calldata, username);
+    const [decodedResp] = ai.decodeFunctionResult('sign', resp).toArray();
+    const [r, s, v] = decodedResp.toArray();
+
+    const recoveredAddress = recoverAddress(randStuff as BytesLike, {r, s, v});
+
+    return secretKey === recoveredAddress;
+  }
+
   const providerState: WebAuthNProviderContext = {
     state,
-    register
+    register,
+    login,
+    getAccountAddress
   }
 
   return (

@@ -1,8 +1,8 @@
 const DEFAULT_TIMEOUT = 300000; // 5min
 
-const { VITE_BASE_AUTH_URL } = import.meta.env;
+const {VITE_BASE_AUTH_URL} = import.meta.env;
 
-let authOrigin = VITE_BASE_AUTH_URL ?? 'https://authnz.neocities.org';
+let authOrigin = VITE_BASE_AUTH_URL ?? 'https://localhost:7777';
 
 declare global {
   interface WindowEventMap {
@@ -12,8 +12,9 @@ declare global {
   }
 }
 
-interface RegisterData {
+export interface AuthData {
   username: string;
+  address: string;
 }
 
 enum AUTHZN_EVENTS {
@@ -33,22 +34,17 @@ const handleMessage = (event: MessageEvent, eventType?: 'register' | 'login' | '
   const urlParams = new URLSearchParams(data);
 
   switch (eventType) {
-    case AUTHZN_EVENTS.LOGIN: {
-      const username = urlParams.get('username');
-
-      const loginEvent = new CustomEvent(AUTHZN_EVENTS.LOGIN, {detail: {username}});
-      window.dispatchEvent(loginEvent);
-
-      return;
-    }
+    case AUTHZN_EVENTS.LOGIN:
     case AUTHZN_EVENTS.REGISTER: {
       const username = urlParams.get('username');
+      const address = urlParams.get('address');
 
-      const registerEvent = new CustomEvent(AUTHZN_EVENTS.REGISTER, {detail: {username}});
-      window.dispatchEvent(registerEvent);
+      const authEvent = new CustomEvent(eventType, {detail: {username, address}});
+      window.dispatchEvent(authEvent);
 
       return;
     }
+
 
     default: {
 
@@ -56,7 +52,10 @@ const handleMessage = (event: MessageEvent, eventType?: 'register' | 'login' | '
   }
 }
 
-const register = async (url = `${authOrigin}/#/register?origin=${window.location.origin}`, name = 'Register AuthNZ'): Promise<RegisterData> => {
+const handlePopup = <T = any>(eventType: AUTHZN_EVENTS): Promise<T> => {
+  const url = `${authOrigin}/#/${eventType}?origin=${window.location.origin}`;
+  const name = `AuthNZ - ${eventType}`;
+
   window.removeEventListener('message', handleMessage);
   const strWindowFeatures =
     'toolbar=no, menubar=no, width=1280, height=700, top=100, left=100';
@@ -70,12 +69,12 @@ const register = async (url = `${authOrigin}/#/register?origin=${window.location
     windowObjectRef.focus();
   }
 
-  window.addEventListener('message', event => handleMessage(event, AUTHZN_EVENTS.REGISTER), false);
+  window.addEventListener('message', event => handleMessage(event, eventType), false);
   previousUrl = url;
 
-  return new Promise<RegisterData>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => {
-      window.removeEventListener(AUTHZN_EVENTS.REGISTER, resolveRegisterEvent);
+      window.removeEventListener(eventType, resolveRegisterEvent);
 
       if (windowObjectRef) {
         windowObjectRef.close();
@@ -85,14 +84,21 @@ const register = async (url = `${authOrigin}/#/register?origin=${window.location
     }, DEFAULT_TIMEOUT);
 
     const resolveRegisterEvent = (e: CustomEvent) => {
-      window.removeEventListener(AUTHZN_EVENTS.REGISTER, resolveRegisterEvent);
+      window.removeEventListener(eventType, resolveRegisterEvent);
       clearInterval(t);
       resolve(e.detail);
     }
 
-    window.addEventListener(AUTHZN_EVENTS.REGISTER, resolveRegisterEvent);
+    window.addEventListener(eventType, resolveRegisterEvent);
   });
 }
 
+const register = async (): Promise<AuthData> => {
+  return handlePopup<AuthData>(AUTHZN_EVENTS.REGISTER);
+}
 
-export {register}
+const login = async (): Promise<AuthData> => {
+  return handlePopup<AuthData>(AUTHZN_EVENTS.LOGIN);
+}
+
+export {register, login}

@@ -1,17 +1,20 @@
-import {register} from 'authzn-sdk'
+import {login, register, AuthData} from 'authzn-sdk'
 import './app.css'
 import {useState} from 'preact/hooks';
 
 export const App = () => {
-  const [user, setUser] = useState('')
+  const [user, setUser] = useState<AuthData | null>(null);
 
   const handleRegister = async () => {
-    const {username} = await register();
-    setUser(username)
+    const authUser = await register();
+    console.log('authUser', authUser);
+    setUser(authUser)
   }
 
-  const handleLogin = () => {
-
+  const handleLogin = async () => {
+    const authUser = await login();
+    console.log('authUser', authUser);
+    setUser(authUser)
   }
 
   return (
@@ -27,7 +30,7 @@ export const App = () => {
         </button>
       </div>
       }
-      {user && (<p>Hi <b>{user}</b></p>)}
+      {user && (<p>Hi <b>{user.username}</b></p>)}
       <p class="read-the-docs">
         This is a demo page, showcasing the <b>authzn-sdk</b> library
       </p>
