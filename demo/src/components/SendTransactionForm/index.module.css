@@ -1,0 +1,23 @@
+.sendTransactionForm {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: var(--white);
+    padding: 1rem;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+}
+
+.form > div {
+    display: flex;
+}
+
+.submit {
+    flex-direction: column;
+    gap: .5rem;
+    justify-content: center;
+}

@@ -6,6 +6,7 @@ import {Message, MessageType} from "../Message";
 import {RegexUtils} from "../../utils/regex.utils";
 import {useWebAuthN} from "../../providers/WebAuthNProvider";
 import {WindowUtils} from "../../utils/window.utils";
+import {Card} from "../Card";
 
 export enum UsernameFormType {
   LOGIN = 'login',
@@ -166,7 +167,7 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
     }
   }
 
-  return <div class={classes.usernameForm}>
+  return <Card>
     <div class={classes.header}>
       <img src="/fingerprint.svg" alt="Authenticate"/>
       <h2>{header}</h2>
@@ -180,8 +181,8 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
           </Message>)}
         </div>
 
-        <Button type="submit" fullWidth>{submitLabel}</Button>
+        <Button type="submit" fullWidth disabled={isLoading}>{submitLabel}</Button>
       </form>
     </div>)}
-  </div>;
+  </Card>;
 };

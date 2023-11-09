@@ -8,7 +8,7 @@ declare global {
   interface WindowEventMap {
     [AUTHZN_EVENTS.LOGIN]: CustomEvent
     [AUTHZN_EVENTS.REGISTER]: CustomEvent
-    [AUTHZN_EVENTS.SEND_TRANSACTION]: CustomEvent
+    [AUTHZN_EVENTS.SIGN]: CustomEvent
   }
 }
 
@@ -17,16 +17,20 @@ export interface AuthData {
   address: string;
 }
 
+export interface SignData {
+  signedTransaction: string;
+}
+
 enum AUTHZN_EVENTS {
   LOGIN = 'login',
   REGISTER = 'register',
-  SEND_TRANSACTION = 'sendTransaction'
+  SIGN = 'sign'
 }
 
 let windowObjectRef: WindowProxy | null = null;
 let previousUrl: string | null = null;
 
-const handleMessage = (event: MessageEvent, eventType?: 'register' | 'login' | 'sendTransaction') => {
+const handleMessage = (event: MessageEvent, eventType?: AUTHZN_EVENTS) => {
   if (event.origin !== authOrigin) {
     return false;
   }
@@ -44,6 +48,14 @@ const handleMessage = (event: MessageEvent, eventType?: 'register' | 'login' | '
 
       return;
     }
+    case AUTHZN_EVENTS.SIGN: {
+      const signedTransaction = urlParams.get('tx');
+
+      const signEvent = new CustomEvent(eventType, {detail: {signedTransaction}});
+      window.dispatchEvent(signEvent);
+
+      return;
+    }
 
 
     default: {
@@ -52,13 +64,19 @@ const handleMessage = (event: MessageEvent, eventType?: 'register' | 'login' | '
   }
 }
 
-const handlePopup = <T = any>(eventType: AUTHZN_EVENTS): Promise<T> => {
-  const url = `${authOrigin}/#/${eventType}?origin=${window.location.origin}`;
+const handlePopup = <T = any>(eventType: AUTHZN_EVENTS, searchObj: Record<string, string> = {}): Promise<T> => {
+  const searchObjWithOrigin = {
+    ...searchObj,
+    origin: window.location.origin
+  };
+
+  const searchParams = new URLSearchParams(searchObjWithOrigin).toString();
+  const url = `${authOrigin}/#/${eventType}?${searchParams}`;
   const name = `AuthNZ - ${eventType}`;
 
   window.removeEventListener('message', handleMessage);
   const strWindowFeatures =
-    'toolbar=no, menubar=no, width=1280, height=700, top=100, left=100';
+    'toolbar=no, menubar=no, width=1280, height=800, top=100, left=100';
 
   if (windowObjectRef === null || windowObjectRef.closed) {
     windowObjectRef = window.open(url, name, strWindowFeatures);
@@ -101,4 +119,10 @@ const login = async (): Promise<AuthData> => {
   return handlePopup<AuthData>(AUTHZN_EVENTS.LOGIN);
 }
 
-export {register, login}
+const sign = async (unSignedTx: string): Promise<SignData> => {
+  return handlePopup<SignData>(AUTHZN_EVENTS.SIGN, {
+    unSignedTx
+  });
+}
+
+export {register, login, sign}

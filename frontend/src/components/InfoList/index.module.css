@@ -1,0 +1,21 @@
+.infoList {
+    display: grid;
+    grid-template-columns: max-content auto;
+    padding: 1rem 1rem 1rem 1.625rem;
+    overflow: auto;
+    color: var(--blue);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 300;
+    line-height: 158%;
+    background: var(--cyan-disabled);
+    border-radius: 10px;
+}
+
+.dt {
+    font-weight: bold;
+}
+
+.dd {
+    margin-inline-start: 0.2rem;
+}

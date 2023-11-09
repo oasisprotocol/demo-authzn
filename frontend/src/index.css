@@ -11,6 +11,7 @@
 
     --white: #fff;
     --cyan: #01ffff;
+    --cyan-disabled: rgba(0, 162, 200, 0.24);
     --blue: #2b00ff;
     --persian-blue: #3333c9;
     --blue-disabled: rgba(0, 162, 200, 0.50);
@@ -28,6 +29,7 @@ body {
     justify-content: center;
     min-height: 100vh;
     background: no-repeat url("/background.png");
+    background-size: cover;
 }
 
 h1, h2, h3, h4, h5, h6, p {

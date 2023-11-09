@@ -9,8 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "preact": "^10.16.0",
-    "authzn-sdk": "workspace:*"
+    "@oasisprotocol/sapphire-paratime": "^1.1.1",
+    "@ethersproject/abstract-signer": "^5.7.0",
+    "authzn-sdk": "workspace:*",
+    "ethers": "5.7.2",
+    "preact": "^10.16.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.5.0",

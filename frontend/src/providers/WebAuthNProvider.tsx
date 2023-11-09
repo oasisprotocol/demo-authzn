@@ -9,7 +9,8 @@ import {
 } from "demo-authzn-backend/dist/typechain-types/contracts/WebAuthNExample.sol/WebAuthNExample";
 import {TransactionReceipt} from "ethers/src.ts/providers/provider";
 import {Account__factory} from "demo-authzn-backend/typechain-types/index.ts";
-import {recoverAddress} from "ethers";
+import {recoverAddress, TransactionLike} from "ethers";
+import {EIP155Signer} from "demo-authzn-backend/dist/typechain-types/contracts/Account.sol/Account";
 
 const _usernameHashesCache: Record<string, Buffer> = {};
 const _usernameAddressCache: Record<string, [string, string]> = {};
@@ -22,6 +23,7 @@ interface WebAuthNProviderContext {
   readonly state: WebAuthNProviderState;
   register: (username: string) => Promise<TransactionReceipt | false | null>;
   login: (username: string) => Promise<boolean>;
+  sign: (username: string, tx: TransactionLike) => Promise<string>;
   getAccountAddress: (username: string) => Promise<string>;
 }
 
@@ -94,7 +96,7 @@ export const WebAuthNContextProvider: FunctionComponent = ({children}) => {
   }
 
   const getAccountAddress = async (username: string): Promise<string> => {
-    const [pubkeyAddr] = await _getAccount(username);
+    const [, pubkeyAddr] = await _getAccount(username);
     return pubkeyAddr;
   }
 
@@ -202,8 +204,6 @@ export const WebAuthNContextProvider: FunctionComponent = ({children}) => {
       return false;
     }
 
-    const [, secretKey] = await _getAccount(username);
-
     const ai = Account__factory.createInterface();
     const randStuff = crypto.getRandomValues(new Uint8Array(32));
     const calldata = ai.encodeFunctionData("sign", [randStuff]);
@@ -214,13 +214,37 @@ export const WebAuthNContextProvider: FunctionComponent = ({children}) => {
 
     const recoveredAddress = recoverAddress(randStuff as BytesLike, {r, s, v});
 
-    return secretKey === recoveredAddress;
+    const pubkeyAddr = await getAccountAddress(username);
+    return pubkeyAddr === recoveredAddress;
+  }
+
+  const signEIP155 = async (username: string, tx: UnsignedTransaction & { from: string }): Promise<any> => {
+    const addressPublicAddress = await getAccountAddress(username);
+
+    // TODO: Sapphire specific, for dummy from check
+    const {from, ...restTx} = tx;
+    if (addressPublicAddress !== from) {
+      return Promise.reject('Malicious action has been detected! Aborting...');
+    }
+
+    const ai = Account__factory.createInterface();
+
+    const calldata = ai.encodeFunctionData('signEIP155', [{
+      ...restTx,
+      data: restTx?.data ?? '0x',
+    } as EIP155Signer.EthTxStruct]);
+
+    const resp = await _verifyChallenge(calldata, username);
+    const [signedTx] = ai.decodeFunctionResult('signEIP155', resp).toArray();
+
+    return signedTx;
   }
 
   const providerState: WebAuthNProviderContext = {
     state,
     register,
     login,
+    sign: signEIP155,
     getAccountAddress
   }
 
