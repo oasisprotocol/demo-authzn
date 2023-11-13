@@ -5,6 +5,13 @@
     border-radius: 27px;
     background: var(--white);
     box-shadow: 3px 3px 13px 0 rgba(0, 162, 200, 0.50);
-    min-width: 430px;
-    padding: 3.875rem 2.8125rem 5rem;
+    padding: 2.375rem 2rem 4rem;
+}
+
+@media screen and (min-width: 1000px) {
+    .card {
+        padding: 3.875rem 2.8125rem 5rem;
+        min-width: 430px;
+        max-width: 750px;
+    }
 }

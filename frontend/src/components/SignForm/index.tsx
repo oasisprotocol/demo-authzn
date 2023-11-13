@@ -102,7 +102,7 @@ export const SignForm: FunctionComponent = () => {
     <div>
       <form className={classes.form} onSubmit={handleFormSubmit} noValidate>
         <div>
-          <input type="text" placeholder="username" value={username} onInput={handleInputChange}/>
+          <input type="text" placeholder="Enter your username" value={username} onInput={handleInputChange}/>
           {isDirty && (<Message type={status.type}>
             {status.value}
           </Message>)}

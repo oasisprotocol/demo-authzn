@@ -28,7 +28,7 @@ body {
     display: flex;
     justify-content: center;
     min-height: 100vh;
-    background: no-repeat url("/background.png");
+    background: no-repeat url("/background.webp");
     background-size: cover;
 }
 
@@ -37,23 +37,23 @@ h1, h2, h3, h4, h5, h6, p {
 }
 
 h1 {
-    font-size: 58px;
     font-style: normal;
     font-weight: 500;
     line-height: 120%;
-    letter-spacing: -2.32px;
+    font-size: 34px;
+    letter-spacing: -1.36px;
 }
 
 h2 {
-    font-size: 32px;
+    font-size: 28px;
     font-style: normal;
     font-weight: 500;
     line-height: 120%;
-    letter-spacing: -1.28px;
+    letter-spacing: -1.12px;
 }
 
 p {
-    font-size: 20px;
+    font-size: 18px;
     font-style: normal;
     font-weight: 300;
     line-height: 120%;
@@ -81,4 +81,20 @@ input[type="text"]::placeholder {
     color: var(--gray);
     font-size: 18px;
     font-weight: 400;
+}
+
+@media screen and (min-width: 1000px) {
+    h1 {
+        font-size: 58px;
+        letter-spacing: -2.32px;
+    }
+
+    h2 {
+        font-size: 32px;
+        letter-spacing: -1.28px;
+    }
+
+    p {
+        font-size: 20px;
+    }
 }

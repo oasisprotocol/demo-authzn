@@ -7,6 +7,6 @@ export const Page: FunctionComponent = ({children}) => {
     <header class={classes.header}>
       <Logo/>
     </header>
-    <main>{children}</main>
+    <main class={classes.main}>{children}</main>
   </div>;
 };

@@ -1,15 +1,16 @@
 .infoList {
-    display: grid;
-    grid-template-columns: max-content auto;
+    display: block;
     padding: 1rem 1rem 1rem 1.625rem;
     overflow: auto;
     color: var(--blue);
-    font-size: 14px;
+    font-size: 12px;
     font-style: normal;
     font-weight: 300;
     line-height: 158%;
     background: var(--cyan-disabled);
     border-radius: 10px;
+    max-width: calc(100vw - 8rem);
+    box-sizing: border-box;
 }
 
 .dt {
@@ -17,5 +18,18 @@
 }
 
 .dd {
-    margin-inline-start: 0.2rem;
+    margin-inline-start: 0;
+}
+
+@media screen and (min-width: 1000px) {
+    .infoList {
+        display: grid;
+        grid-template-columns: max-content auto;
+        font-size: 14px;
+        max-width: initial;
+    }
+
+    .dd {
+        margin-inline-start: 0.2rem;
+    }
 }
