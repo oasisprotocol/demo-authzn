@@ -14,7 +14,7 @@ export abstract class WindowUtils {
       const origin = WindowUtils.getSearchParam('origin');
 
       // TODO: Unsafe
-      window.opener.postMessage(message, origin);
+      window.opener.postMessage({target: 'authzn-popup', ...message}, origin);
 
       window.close();
     }

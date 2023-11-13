@@ -8,6 +8,8 @@ import {useWebAuthN} from "../../providers/WebAuthNProvider";
 import {WindowUtils} from "../../utils/window.utils";
 import {Card} from "../Card";
 
+const src = new URL('/fingerprint.svg', import.meta.url).href
+
 export enum UsernameFormType {
   LOGIN = 'login',
   REGISTER = 'register'
@@ -169,7 +171,7 @@ export const UsernameForm: FunctionComponent<Props> = ({type}) => {
 
   return <Card>
     <div class={classes.header}>
-      <img src="/fingerprint.svg" alt="Authenticate"/>
+      <img src={src} alt="Authenticate"/>
       <h2>{header}</h2>
     </div>
     {showForm && (<div>

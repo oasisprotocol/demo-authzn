@@ -2,7 +2,7 @@ const DEFAULT_TIMEOUT = 300000; // 5min
 
 const {VITE_BASE_AUTH_URL} = import.meta.env;
 
-let authOrigin = VITE_BASE_AUTH_URL ?? 'https://localhost:7777';
+let authOrigin = VITE_BASE_AUTH_URL ?? 'https://playground.oasis.io';
 
 declare global {
   interface WindowEventMap {
@@ -36,6 +36,10 @@ const handleMessage = (event: MessageEvent, eventType?: AUTHZN_EVENTS) => {
   }
   const {data} = event;
   const urlParams = new URLSearchParams(data);
+
+  if(urlParams.get('target') !== 'authzn-popup') {
+    return false;
+  }
 
   switch (eventType) {
     case AUTHZN_EVENTS.LOGIN:
@@ -71,7 +75,7 @@ const handlePopup = <T = any>(eventType: AUTHZN_EVENTS, searchObj: Record<string
   };
 
   const searchParams = new URLSearchParams(searchObjWithOrigin).toString();
-  const url = `${authOrigin}/#/${eventType}?${searchParams}`;
+  const url = `${authOrigin}/authzn/#/${eventType}?${searchParams}`;
   const name = `AuthNZ - ${eventType}`;
 
   window.removeEventListener('message', handleMessage);
