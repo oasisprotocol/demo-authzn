@@ -1,0 +1,17 @@
+{
+  "name": "authzn-sdk",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && vite build",
+    "checkTs": "tsc --noEmit",
+    "clean": "rimraf lib",
+    "watch": "tsc --watch"
+  },
+  "main": "src/index.ts",
+  "devDependencies": {
+    "typescript": "^5.0.2",
+    "vite": "^4.4.5"
+  }
+}

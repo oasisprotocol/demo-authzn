@@ -1,0 +1,13 @@
+.header {
+    text-align: center;
+}
+
+.header h2 {
+    color: var(--blue);
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+}

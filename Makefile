@@ -17,7 +17,7 @@ sapphire-dev-pull:
 	docker pull $(SAPPHIRE_DEV_DOCKER)
 
 sapphire-dev:
-	docker run --rm -it -p8545:8545 -p8546:8546 -e SAPPHIRE_BACKEND=mock $(SAPPHIRE_DEV_DOCKER) -to 'test test test test test test test test test test test junk' -n 20
+	docker run --rm -it -p8545:8545 -p8546:8546 --platform linux/x86_64 -e SAPPHIRE_BACKEND=mock $(SAPPHIRE_DEV_DOCKER) -to 'test test test test test test test test test test test junk' -n 20
 
 pnpm:
 	pnpm install

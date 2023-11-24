@@ -12,7 +12,11 @@ task("deploy", "Deploy contracts necessary for the frontend")
         const contract = await contractFactory.deploy({value: parseEther('1.0')});
         await contract.waitForDeployment();
 
-        const totpFactory = await hre.ethers.getContractFactory('TOTPExample');
+        const sha1Factory = await hre.ethers.getContractFactory("SHA1");
+        const sha1Library = await sha1Factory.deploy();
+        await sha1Library.waitForDeployment();
+
+        const totpFactory = await hre.ethers.getContractFactory('TOTPExample', { libraries: { SHA1: await sha1Library.getAddress() } });
         const totpContract = await totpFactory.deploy();
         await totpContract.waitForDeployment();
 

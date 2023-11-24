@@ -1,0 +1,29 @@
+.message {
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 300;
+    line-height: 111%;
+    letter-spacing: -0.56px;
+    text-align: center;
+    margin-top: 0.25rem;
+}
+
+.message:empty {
+    min-height: 0.875rem;
+}
+
+.message:first-letter {
+    text-transform: capitalize;
+}
+
+.success {
+    color: #00ff00;
+}
+
+.error {
+    color: #ff0000;
+}
+
+.info {
+    color: #fff;
+}

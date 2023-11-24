@@ -1,40 +1,14 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8"/>
+    <link rel="icon" href="/favicon.ico"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"/>
     <title>Sapphire Auth[ZN] Demo</title>
-    <script type="module" src="/src/main.ts"></script>
-  </head>
-  <body>
-    <div>
-      <h1>Sapphire Auth[ZN] Demo</h1>
-      <hr />
-        <div id="webauthn">
-          <div>
-            <label for="webauthn-username">Username:</label>
-            <input type="text" id="webauthn-username" disabled />
-            <img id="webauthn-username-spinner" src="spinner.gif" style="width: 16px; height: 16px; visibility: hidden;" />
-            <span id="webauthn-username-status"></span>
-          </div>
-          <button id="webauthn-username-check" disabled>Exists?</button>
-          <div id="webauthn-register">
-            <button id="webauthn-register-button" type="button" disabled="disabled">Register</button>
-            <img id="webauthn-register-spinner" src="spinner.gif" style="width: 16px; height: 16px; visibility: hidden;" />
-            <span id="webauthn-register-status"></span>
-          </div>
-          <div id="webauthn-test">
-            <button id="webauthn-test-button" type="button" disabled="disabled">Test</button>
-            <img id="webauthn-test-spinner" src="spinner.gif" style="width: 16px; height: 16px; visibility: hidden;" />
-            <span id="webauthn-test-status"></span>
-          </div>
-          <div id="webauthn-totp">
-            <button id="webauthn-totp-button" type="button" disabled="disabled">Test (TOTP)</button>
-            <img id="webauthn-totp-spinner" src="spinner.gif" style="width: 16px; height: 16px; visibility: hidden;" />
-            <span id="webauthn-totp-status"></span>
-          </div>
-        </div><!-- #webauthn -->
-      <hr />
-    </div>
-  </body>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module" src="/src/main.tsx"></script>
+</body>
 </html>

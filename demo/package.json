@@ -1,0 +1,23 @@
+{
+  "name": "demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 8000",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@oasisprotocol/sapphire-paratime": "^1.1.1",
+    "@ethersproject/abstract-signer": "^5.7.0",
+    "authzn-sdk": "workspace:*",
+    "ethers": "5.7.2",
+    "preact": "^10.16.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.5.0",
+    "typescript": "^5.0.2",
+    "vite": "^4.4.5"
+  }
+}

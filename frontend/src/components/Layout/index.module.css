@@ -1,0 +1,30 @@
+.layout {
+    display: flex;
+    gap: 1rem;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.left {
+    text-align: center;
+}
+
+.left h1 {
+    margin-bottom: 1rem;
+}
+
+@media screen and (min-width: 1000px) {
+    .layout {
+        gap: 7rem;
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .left {
+        text-align: left;
+    }
+
+    .left h1 {
+        margin-bottom: 2rem;
+    }
+}
